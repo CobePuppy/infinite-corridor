@@ -12,6 +12,9 @@
   四条降级、180 组模板×主题校验、三套新词表、geometry 零回归全部通过；核实 `C.theme.active()`
   返回 id 字符串、`C.theme.get(opts.theme)` 链路可正确命中，四主题切换不会静默回落。
   **§8 第 1–5 条（自动化可覆盖）转为「通过」；第 6–8 条仍需人工试玩 / 录制 90 秒视频 / 大赛提交，保持待办。**
+- **2026-11-17 浏览器实拍验证（开发总监）**：用 Edge 无头 + CDP 真实点击「进入回廊」与主题按钮，
+  确认四主题选择器生效、开局成功、换主题后房间 / boss 命名与 HUD 标签同步、零 JS 异常；
+  详见文末「附录：浏览器实拍验证」。这是第 6 条的**自动化部分**证据，不替代人工计时与手感试玩。
 - 「当前依据」只记录当前代码快照下自动化测试的客观结果，供总监复跑时比对，**不替代验收结论**。
 - 相关资产：`tests/smoke.js`（M1 基线，20/20，禁止改动）、`tests/m2m3.js`（M4 验收资产）、
   `docs/demo-90s.md`（90 秒演示分镜与记录表）。
@@ -20,11 +23,11 @@
 
 | 项 | 值 |
 |---|---|
-| git HEAD | `45101e5` |
+| git HEAD | `fd62682`（M2/M3 阶段性进展，已推 `origin/main`） |
 | 工作区并行改动 | `src/core/engine.js`、`src/gen/index.js`、`src/gen/templates.js`、`src/theme/index.js`、`src/ui/{main,screens}.js`、`src/ui/style.css`（由 gen-dev / theme-dev 落地，**qa-release 未触碰**） |
 | `node tests/smoke.js` | 20 passed / 0 failed（基线未动） |
 | `node tests/m2m3.js` | 58 passed / 0 failed / 0 waiting（含 180/180 组 validate、四类降级均 `source='fallback'`） |
-| 备注 | 2026-11-17 开发总监已在三方汇合后亲自复跑上述两条命令，结果与本表一致；改动文件均在授权边界内，`index.html`、`tests/smoke.js`、`core/perks.js`、`core/audio.js` 未改动，core 层仅 `startRun()` 两行 |
+| 备注 | 2026-11-17 开发总监已在三方汇合后亲自复跑上述两条命令，结果与本表一致；改动文件均在授权边界内，`index.html`、`tests/smoke.js`、`core/perks.js`、`core/audio.js` 未改动，core 层仅 `startRun()` 两行；另完成浏览器实拍验证，见文末附录 |
 
 ---
 
@@ -101,7 +104,7 @@
 | 命令 | 手动试玩（自动化无法覆盖手感与时长）；`node tests/smoke.js` 间接覆盖重开链路 |
 | 负责人 | 全队试玩、qa-release（记录表）；复跑：开发总监 |
 | 状态 | ⏳ 待办 · 人工试玩（自动化无法覆盖） |
-| 当前依据 | 需人工试玩与真机计时，当前未采样；`docs/demo-90s.md` 已备「单局时长 / 重开率」记录表 |
+| 当前依据 | 需人工试玩与真机计时，当前未采样；`docs/demo-90s.md` 已备「单局时长 / 重开率」记录表。**自动化部分已覆盖**：浏览器实拍确认开局成功（`phase:playing`）、四主题选择器生效、切主题后命名与 HUD 同步、零 JS 异常（见文末附录） |
 
 ### 第 7 条
 
@@ -149,3 +152,26 @@ node tests/m2m3.js
 
 2026-11-17 开发总监复跑完成：第 1–5 条已转「通过」并署名，第 6–8 条如实保留待办。
 任一 `FAIL` / `WAIT` 须回到对应负责人修复后重跑，**不得以修改 `src/**` 或 `tests/smoke.js` 的方式让测试变绿**。
+
+---
+
+## 附录：浏览器实拍验证（2026-11-17 · 开发总监）
+
+> 目的：验证 M2/M3 在**真实浏览器链路**（而非仅 Node 单测）下可用。方式为 Edge 无头 + CDP
+> 真实点击开始页按钮；验证结束后本地服务与调试端口均已关闭，未留下后台进程。
+
+| 项 | 结果 |
+|---|---|
+| 页面加载 | `file://` 与内置预览均可正常加载，`window.Corridor` 就绪，`themes = geometry/oldtown/subject/wudang` |
+| 主题选择器 | 四枚按钮齐全，默认 `geometry`；点击「旧城」后 `active()` 变为 `oldtown`，按钮高亮同步 |
+| 开局（几何） | `phase:playing`、5 房、threat `1,2,3,4,5`、房间「折廊」、boss「闭域」、`source:fallback`、HP 100 |
+| 开局（旧城，真实点击流程） | `phase:playing`、`theme:oldtown`、4 房、房间「旧钟楼」、boss「拆墙人」、HUD 主题标签「旧城」、`source:fallback` |
+| JS 异常 | `Runtime.exceptionThrown` / console error 均为 **0** |
+| 结论 | 主题切换 → `startRun()` → `templates.reseed` 按主题重映射 → `schema.validate` → 渲染 全链路通；命名素材与 HUD 标签随主题正确变化 |
+
+说明：初次曾出现「切到旧城但 HUD 仍显示抽象几何」，经核查为验证脚本直接调用
+`C.theme.setActive()` 绕过 UI 点击、未触发 `syncThemeUI()` 所致；按真实点击流程复验后 HUD 正确显示「旧城」，
+**非产品缺陷**。（`screens.js` 的 `themeLabel` 为点击时缓存值，将来若从结算页等非开始页入口切换主题，需同步刷新该缓存。）
+
+截图留存：`D:/SrcCode/Competition/shot-start.png`（开始页）、`shot-play.png`（几何战斗）、
+`shot-oldtown-real.png`（旧城战斗，真实点击流程）。截图为本地临时产物，未纳入仓库。
