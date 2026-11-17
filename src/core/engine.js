@@ -227,12 +227,12 @@
     opts = opts || {};
     loadMeta();
     var idx = opts.runIndex || runIndex;
-    var theme = C.theme.get('geometry');
+    var theme = C.theme.get(opts.theme);
     var input = {
       seed: uuid(),
       difficulty: clamp(1 + Math.floor(idx / 2), 1, 5),
       run_index: idx,
-      theme: 'geometry',
+      theme: theme.id,
       theme_vocab: theme.vocab,
       unlocked: meta.unlocked.slice(),
       last_run: lastRun,

@@ -153,6 +153,29 @@
       if (i > 1 && r.color_token === 'ink') r.color_token = 'teal';
     });
 
+    /* 名称主题中立化：模板内 room.name / enemy.type / boss.name 是 geometry 词表硬编码，
+     * schema.validate 用 input.theme_vocab 做白名单校验，新主题下会校验失败。
+     * 按「模板原值在 geometry 词表中的索引」映射到 input.theme_vocab 的同索引项。
+     * 约定三套新词表与 geometry 同构：enemy_types 恰 5 项（chase/orbit/charge/ranged/static）、
+     * room_names ≥5、boss_names ≥3；geometry 下 vocab===GEOM，映射恒等，M1 行为零回归。
+     * 只重映射名称：结构 / 数值 / pattern / color_token / path_hint / summary 逻辑全部不动。 */
+    var GEOM = (C.theme && C.theme.get('geometry').vocab) || null;
+    var vocab = input.theme_vocab || (C.theme ? (C.theme.get(run.theme) || {}).vocab : null);
+    if (GEOM && vocab) {
+      var remap = function (value, geomList, newList) {
+        if (!Array.isArray(geomList) || !Array.isArray(newList) || !newList.length) return value;
+        var idx = geomList.indexOf(value);
+        return (idx >= 0 && idx < newList.length) ? newList[idx] : value;
+      };
+      run.rooms.forEach(function (r) {
+        r.name = remap(r.name, GEOM.room_names, vocab.room_names);
+        r.enemies.forEach(function (e) {
+          e.type = remap(e.type, GEOM.enemy_types, vocab.enemy_types);
+        });
+      });
+      run.boss.name = remap(run.boss.name, GEOM.boss_names, vocab.boss_names);
+    }
+
     return run;
   }
 

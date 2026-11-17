@@ -7,6 +7,7 @@
   var $ = function (id) { return document.getElementById(id); };
   var handlers = {};
   var toastTimer = null;
+  var themeLabel = '';
 
   function show(name) {
     ['start', 'perk', 'end', 'unlock'].forEach(function (n) {
@@ -28,6 +29,55 @@
   }
 
   function rarityClass(r) { return 'r-' + r; }
+
+  /* 主题选择状态：选择器与 HUD 标签均由 JS 注入，不触碰 index.html 静态结构 */
+  function syncThemeUI() {
+    var id = C.theme.active();
+    themeLabel = C.theme.get(id).label;
+    Array.prototype.forEach.call(document.querySelectorAll('.theme-opt'), function (b) {
+      var on = b.dataset.theme === id;
+      b.classList.toggle('active', on);
+      b.setAttribute('aria-pressed', on ? 'true' : 'false');
+    });
+  }
+
+  function injectHudTheme() {
+    if ($('hud-theme')) return;
+    var stats = document.querySelector('.hud-right .hud-stats');
+    if (!stats) return;
+    var tag = document.createElement('span');
+    tag.className = 'theme-tag';
+    tag.innerHTML = '<span class="theme-tag-k">主题</span> <b id="hud-theme"></b>';
+    stats.appendChild(tag);
+  }
+
+  function buildThemePicker() {
+    var start = $('screen-start');
+    var actions = start && start.querySelector('.start-actions');
+    if (!actions || $('theme-picker')) return;
+    var wrap = document.createElement('div');
+    wrap.id = 'theme-picker';
+    wrap.className = 'theme-picker';
+    var head = document.createElement('div');
+    head.className = 'theme-picker-label';
+    head.innerHTML = '选择主题 <span>THEME</span>';
+    wrap.appendChild(head);
+    var opts = document.createElement('div');
+    opts.className = 'theme-options';
+    C.theme.readyIds().forEach(function (id) {
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'theme-opt';
+      b.dataset.theme = id;
+      b.textContent = C.theme.get(id).label;
+      b.addEventListener('click', function () {
+        if (C.theme.setActive(id)) syncThemeUI();
+      });
+      opts.appendChild(b);
+    });
+    wrap.appendChild(opts);
+    start.insertBefore(wrap, actions);
+  }
 
   function perkCard(id, opts) {
     var def = C.core.perks.TABLE[id];
@@ -57,6 +107,8 @@
   }
 
   function updateHud(s) {
+    var hudTheme = $('hud-theme');
+    if (hudTheme) hudTheme.textContent = themeLabel;
     if (!s || !s.room) return;
     var p = s.player;
     var ratio = Math.max(0, p.hp / p.maxHp);
@@ -162,6 +214,9 @@
       show($('unlock-back').dataset.from === 'end' ? 'end' : 'start');
     });
     $('btn-mute').addEventListener('click', function () { handlers.onToggleMute && handlers.onToggleMute(); });
+    injectHudTheme();
+    buildThemePicker();
+    syncThemeUI();
     show('start');
   }
 
