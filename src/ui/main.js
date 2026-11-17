@@ -68,7 +68,7 @@
   async function begin() {
     audio.resume();
     screens.show(null);
-    await engine.startRun({ onEvent: onEvent });
+    await engine.startRun({ onEvent: onEvent, theme: C.theme.active() });
   }
 
   function loop(ts) {

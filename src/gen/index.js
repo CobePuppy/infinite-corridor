@@ -51,9 +51,117 @@
     return s.slice(a, b + 1);
   }
 
-  /* M2 接入点：温度 0.7 / max_tokens 1400 / timeout 8000ms */
+  /* ---------- M2：可配置 LLM 适配器 ----------
+   * 配置全部来自 localStorage（键 corridor.llm.v1），由用户自行填写，绝不内置密钥。
+   * 只用浏览器原生 fetch + AbortController，不引入任何 npm 依赖 / 后端服务；
+   * LLM 关闭时 buildRun 不发起任何网络请求，file:// 离线可玩保持不变。
+   */
+  var CONFIG_KEY = 'corridor.llm.v1';
+
+  function readConfig() {
+    try {
+      var raw = localStorage.getItem(CONFIG_KEY);
+      if (!raw) return null;
+      var c = JSON.parse(raw);
+      return (c && typeof c === 'object' && !Array.isArray(c)) ? c : null;
+    } catch (e) { return null; }
+  }
+
+  function writeConfig(c) {
+    try { localStorage.setItem(CONFIG_KEY, JSON.stringify(c)); } catch (e) { /* 无痕/配额忽略 */ }
+  }
+
+  /* isEnabled：读是否尝试 LLM 分支的显式开关（config.enabled === true）。
+   * 配置完整度不在本函数判定，而交给 callLLM，使「已开启但 endpoint/apiKey/model 缺失」
+   * 也进入 LLM 分支并落到既有 telemetry('run_fallback') + fallback()。
+   * 同时把结果同步到闭包变量 LLM_ENABLED，使完全未改动的 buildRun 能感知开关。 */
+  function isEnabled() {
+    var c = readConfig();
+    LLM_ENABLED = !!(c && c.enabled === true);
+    return LLM_ENABLED;
+  }
+
+  /* 最小公开接口：configure(opts) 合并写入 {endpoint, apiKey, model, enabled}。
+   * 开启：C.gen.configure({ endpoint, apiKey, model, enabled: true })
+   * 关闭：C.gen.configure({ enabled: false })
+   * 返回是否启用。 */
+  function configure(opts) {
+    opts = opts || {};
+    var c = readConfig() || { endpoint: '', apiKey: '', model: '', enabled: false };
+    ['endpoint', 'apiKey', 'model'].forEach(function (k) {
+      if (Object.prototype.hasOwnProperty.call(opts, k)) {
+        c[k] = String(opts[k] == null ? '' : opts[k]);
+      }
+    });
+    if (Object.prototype.hasOwnProperty.call(opts, 'enabled')) c.enabled = !!opts.enabled;
+    writeConfig(c);
+    return isEnabled();
+  }
+
+  /* M2 接入点：温度 0.7 / max_tokens 1400 / timeout 8000ms 均由 buildRun 传入。
+   * 返回模型输出文本，交回 buildRun 既有的 extractJson + JSON.parse + schema.validate。 */
   function callLLM(opts) {
-    return Promise.reject(new Error('LLM 适配器尚未启用（M1 阶段）'));
+    opts = opts || {};
+    var cfg = readConfig();
+    if (!cfg || cfg.enabled !== true) {
+      return Promise.reject(new Error('LLM 未启用'));
+    }
+    if (!cfg.endpoint || !cfg.apiKey || !cfg.model) {
+      return Promise.reject(new Error('LLM 未配置（endpoint / apiKey / model 缺失）'));
+    }
+
+    var controller = new AbortController();
+    var timeoutMs = opts.timeoutMs || 8000;
+    var timer;
+    /* 独立超时 promise：即便底层 fetch 未及时响应 signal，也在 timeoutMs 后强制拒绝，
+     * 同时 controller.abort() 真正中断请求，硬保证「失败 8 秒内降级、绝不阻塞开局」。 */
+    var timeout = new Promise(function (_, reject) {
+      timer = setTimeout(function () {
+        try { controller.abort(); } catch (e) { /* 忽略 */ }
+        reject(new Error('LLM 请求超时（' + timeoutMs + 'ms）'));
+      }, timeoutMs);
+    });
+
+    var payload = {
+      model: cfg.model,
+      messages: [
+        { role: 'system', content: opts.system },
+        { role: 'user', content: opts.user }
+      ],
+      temperature: opts.temperature,
+      max_tokens: opts.max_tokens,
+      stream: false
+    };
+
+    var request = fetch(cfg.endpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer ' + cfg.apiKey
+      },
+      body: JSON.stringify(payload),
+      signal: controller.signal
+    }).then(function (res) {
+      if (!res.ok) throw new Error('LLM HTTP ' + res.status);
+      return res.text();
+    });
+
+    return Promise.race([request, timeout]).then(function (body) {
+      clearTimeout(timer);
+      /* 兼容 OpenAI 风格 {choices:[{message:{content}}]}；否则整段文本即模型输出。 */
+      try {
+        var parsed = JSON.parse(body);
+        if (parsed && Array.isArray(parsed.choices) && parsed.choices[0] &&
+            parsed.choices[0].message && typeof parsed.choices[0].message.content === 'string') {
+          return parsed.choices[0].message.content;
+        }
+      } catch (e) { /* 非外层 JSON：按纯文本交给 extractJson 处理 */ }
+      return body;
+    }, function (err) {
+      clearTimeout(timer);
+      if (err && err.name === 'AbortError') throw new Error('LLM 请求超时（' + timeoutMs + 'ms）');
+      throw err;
+    });
   }
 
   function telemetry(event, payload) {
@@ -100,6 +208,11 @@
   C.gen.buildRequest = buildRequest;
   C.gen.extractJson = extractJson;
   C.gen.SYSTEM_PROMPT = SYSTEM_PROMPT;
-  C.gen.LLM_ENABLED = function () { return LLM_ENABLED; };
+  C.gen.LLM_ENABLED = function () { return isEnabled(); };
   C.gen.telemetry = telemetry;
+  C.gen.configure = configure;
+  C.gen.isEnabled = isEnabled;
+
+  /* 模块加载时同步一次开关：无配置时保持 false（默认关闭、离线零网络）。 */
+  isEnabled();
 })(window.Corridor = window.Corridor || {});
