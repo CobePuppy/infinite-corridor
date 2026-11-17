@@ -3,7 +3,7 @@
  *
  * 作者：qa-release（QA / 发布工程师）
  * 定位：这是「验收资产」，不是「验收结论」。gen-dev(M2) 与 theme-dev(M3) 正并行改动，
- *       本脚本在三方汇合前不宣告通过；最终集成验收由开发总监亲自复跑。
+ *       历史：三方汇合前不宣告通过；2026-11-17 已由开发总监完成集成复跑（58/0/0）。
  *
  * 硬性边界（务必遵守）：
  *   - 本文件只 require core / gen / theme 三层，不加载 ui（避免 DOM 依赖）。
@@ -14,7 +14,7 @@
  * 覆盖（对应 T5）：
  *   ① LLM 开关默认关闭、离线仍走 fallback；
  *   ② 未配置 / 超时 / 返回非法或纯文本 JSON / schema 校验失败，四类降级均返回 source='fallback'；
- *   ③ 3 套模板 × 4 主题 × 5 难度 × 3 seed = 180 组全部通过 C.gen.schema.validate；
+ *   ③ 6 套模板 × 4 主题 × 5 难度 × 3 seed = 360 组全部通过 C.gen.schema.validate；
  *   ④ 三套新主题 vocab 结构完整且与 geometry 同构、summary_lines 无 AI/生成/模型/LLM/token 禁用词；
  *   ⑤ geometry（默认主题）结果不回归。
  *
@@ -43,7 +43,7 @@
  *      四个数组均为非空字符串数组，color_tokens 取值须在 schema.ENUM.color_token 内），
  *     summary_lines 为非空数组，每条 ≤80 字且不含 AI/生成/模型/LLM/token 元信息词。
  *   · gen/templates.js 的 reseed() 按「geometry 索引 → 当前词表同索引项」重映射命名素材，
- *     故 3 模板 × 4 主题 × 5 难度 × 3 seed = 180 组均应通过 schema.validate。
+ *     故 6 模板 × 4 主题 × 5 难度 × 3 seed = 360 组均应通过 schema.validate。
  *   · 主题切换：C.theme.active() / setActive()，键 corridor.theme.v1；HUD 显示当前主题。
  * ────────────────────────────────────────────────────────────────────────
  */
@@ -312,9 +312,10 @@ function fakeResponse(raw, parseOk) {
       }
     }
 
-    /* ========== ③ 180 组 schema.validate ========== */
-    section('3. 3 套模板 × 4 主题 × 5 难度 × 3 seed = 180 组全部通过 C.gen.schema.validate');
-    var expectedTotal = 3 * THEME_IDS.length * DIFFS.length * SEEDS.length; // 180
+    /* ========== ③ 360 组 schema.validate ========== */
+    section('3. 6 套模板 × 4 主题 × 5 难度 × 3 seed = 360 组全部通过 C.gen.schema.validate');
+    /* 模板数取运行时真实长度，避免硬编码（模板已扩容为 6 套 / 3–8 房）。 */
+    var expectedTotal = C.gen.templates.TEMPLATES.length * THEME_IDS.length * DIFFS.length * SEEDS.length; // 360
     var grandTotal = 0, grandOk = 0;
     var perTheme = {};
 
@@ -425,7 +426,7 @@ function fakeResponse(raw, parseOk) {
       JSON.stringify(Object.keys(g.vocab).sort()) ===
       JSON.stringify(['boss_names', 'color_tokens', 'enemy_types', 'room_names', 'summary_prefix']));
     check('geometry 出现在 theme.readyIds()', C.theme.readyIds().indexOf('geometry') !== -1);
-    check('降级模板仍为 3 套', C.gen.templates.TEMPLATES.length === 3);
+    check('降级模板扩容为 6 套（3/4/5/6/7/8 房各一套）', C.gen.templates.TEMPLATES.length === 6);
 
     var gTotal = 0, gOk = 0;
     C.gen.templates.TEMPLATES.forEach(function (tpl) {
@@ -443,8 +444,9 @@ function fakeResponse(raw, parseOk) {
         });
       });
     });
-    check('geometry 45 组（3 模板 × 5 难度 × 3 seed）reseed+validate 全过',
-      gTotal === 45 && gOk === gTotal, gOk + '/' + gTotal);
+    var expectedGeo = C.gen.templates.TEMPLATES.length * DIFFS.length * SEEDS.length; // 90
+    check('geometry ' + expectedGeo + ' 组（' + C.gen.templates.TEMPLATES.length + ' 模板 × 5 难度 × 3 seed）reseed+validate 全过',
+      gTotal === expectedGeo && gOk === gTotal, gOk + '/' + gTotal);
 
     var rsBad = [];
     [0, 1, 2, 3, 7, 999, 12345].forEach(function (h) {
@@ -463,9 +465,9 @@ function fakeResponse(raw, parseOk) {
 
     /* ---- 汇总 ---- */
     console.log('\n──────────────────────────────');
-    console.log('  ' + passed + ' passed, ' + failed + ' failed, ' + waiting + ' waiting（待集成复跑）');
+    console.log('  ' + passed + ' passed, ' + failed + ' failed, ' + waiting + ' waiting');
     console.log('  说明：WAIT 计入未通过并逐条标注真实原因；FAIL 为真实断言不成立，须修复后复跑。');
-    console.log('  最终集成验收由开发总监在三方汇合后亲自复跑，期望 0 failed / 0 waiting。');
+    console.log('  集成验收由开发总监复跑（2026-11-17 已通过）；期望 0 failed / 0 waiting。');
     console.log('──────────────────────────────');
     process.exit((failed || waiting) ? 1 : 0);
   } catch (e) {

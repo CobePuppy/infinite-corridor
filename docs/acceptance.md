@@ -9,25 +9,32 @@
 - **状态初始为「待集成」**：qa-release 的职责是准备验收资产，**不自行宣告通过**。gen-dev(M2)、
   theme-dev(M3) 曾与本文档并行改动代码，最终集成验收由**开发总监在三方汇合后亲自复跑**。
 - **2026-11-17 复跑结论（开发总监）**：`node tests/smoke.js` = 20/20、`node tests/m2m3.js` = 58/0/0，
-  四条降级、180 组模板×主题校验、三套新词表、geometry 零回归全部通过；核实 `C.theme.active()`
+  四条降级、**360 组模板×主题校验（M5 后由 180 组升级）**、三套新词表、geometry 零回归全部通过；核实 `C.theme.active()`
   返回 id 字符串、`C.theme.get(opts.theme)` 链路可正确命中，四主题切换不会静默回落。
   **§8 第 1–5 条（自动化可覆盖）转为「通过」；第 6–8 条仍需人工试玩 / 录制 90 秒视频 / 大赛提交，保持待办。**
 - **2026-11-17 浏览器实拍验证（开发总监）**：用 Edge 无头 + CDP 真实点击「进入回廊」与主题按钮，
   确认四主题选择器生效、开局成功、换主题后房间 / boss 命名与 HUD 标签同步、零 JS 异常；
   详见文末「附录：浏览器实拍验证」。这是第 6 条的**自动化部分**证据，不替代人工计时与手感试玩。
+- **2026-11-17 M5「全套」集成验收结论（开发总监）**：T24–T28 五个并行会话汇合后，
+  总监亲自修复 7 处跨层缺口并复跑三条命令：`smoke.js` 20/20、`m2m3.js` 58/0/0、
+  新增 `tests/fullsuite.js` **46/46**；四套主题经不占端口的一次性无头截图确认视觉分化。
+  §8 第 1–5 条维持「通过」，第 6–8 条仍为人工项（真人计时 / 90 秒视频 / 大赛提交）。
+  详见文末「附录：M5 全套集成验收」。
 - 「当前依据」只记录当前代码快照下自动化测试的客观结果，供总监复跑时比对，**不替代验收结论**。
 - 相关资产：`tests/smoke.js`（M1 基线，20/20，禁止改动）、`tests/m2m3.js`（M4 验收资产）、
-  `docs/demo-90s.md`（90 秒演示分镜与记录表）。
+  `tests/fullsuite.js`（M5 跨层接线 + 节奏量化）、`docs/demo-90s.md`（90 秒高光蒙太奇与记录表）。
 
 ### 当前集成快照（供比对，非验收结论）
 
 | 项 | 值 |
 |---|---|
-| git HEAD | `fd62682`（M2/M3 阶段性进展，已推 `origin/main`） |
-| 工作区并行改动 | `src/core/engine.js`、`src/gen/index.js`、`src/gen/templates.js`、`src/theme/index.js`、`src/ui/{main,screens}.js`、`src/ui/style.css`（由 gen-dev / theme-dev 落地，**qa-release 未触碰**） |
-| `node tests/smoke.js` | 20 passed / 0 failed（基线未动） |
-| `node tests/m2m3.js` | 58 passed / 0 failed / 0 waiting（含 180/180 组 validate、四类降级均 `source='fallback'`） |
-| 备注 | 2026-11-17 开发总监已在三方汇合后亲自复跑上述两条命令，结果与本表一致；改动文件均在授权边界内，`index.html`、`tests/smoke.js`、`core/perks.js`、`core/audio.js` 未改动，core 层仅 `startRun()` 两行；另完成浏览器实拍验证，见文末附录 |
+| 代码基线 | `845ba76`（M2/M3/M4，已推 `origin/main`）→ 本次 M5「全套」集成提交 |
+| 工作区改动 | 11 个源码文件（T24–T27 四方）+ 1 个新增 `tests/fullsuite.js` + 3 份文档；`tests/smoke.js` 与 `core/audio.js` 未改动 |
+| `node tests/smoke.js` | **20 passed / 0 failed**（冻结基线未动） |
+| `node tests/m2m3.js` | **58 passed / 0 failed / 0 waiting**（含 360/360 组 validate、四类降级均 `source='fallback'`） |
+| `node tests/fullsuite.js` | **46 passed / 0 failed**（跨层接线 §A + 节奏量化 §B） |
+| 浏览器实拍 | M5 四主题战斗画面一次性无头截图，不起端口 / 不起后台进程，四套色板与背景分化确认 |
+| 备注 | 2026-11-17 开发总监已完成集成验收；7 处跨层缺口全部修复（见文末 M5 附录）。单局 240s±30s 属真人手感范畴，理论模型不作为验收结论 |
 
 ---
 
@@ -64,11 +71,11 @@
 
 | 项 | 内容 |
 |---|---|
-| 验证方式 | 3 套模板 × 5 难度 × 3 seed 全部通过 `validate`；`m2m3.js` ③ 再扩到 4 主题共 180 组；手动连续三次制造降级失败，肉眼比对房间数 / threat 序列不雷同 |
-| 命令 | `node tests/smoke.js`（§1 45 组）、`node tests/m2m3.js`（③ 180 组） |
+| 验证方式 | **提示词原文为「3 套降级模板」，M5 扩容为 6 套（3–8 房）**，验证口径同步升级：6 模板 × 4 主题 × 5 难度 × 3 seed 共 360 组全部通过 `validate`；手动连续三次制造降级失败，肉眼比对房间数 / threat 序列不雷同。口径差异如实并列，不以扩容后的结果冒充原提示词的 3 套 |
+| 命令 | `node tests/smoke.js`（§1）、`node tests/m2m3.js`（③ 360 组） |
 | 负责人 | qa-release（资产）、gen-dev（模板轮换与按主题重映射）、theme-dev（词表）；复跑：开发总监 |
 | 状态 | ✅ 通过（自动化复跑 · 开发总监 2026-11-17） |
-| 当前依据 | `smoke.js` §1 45/45；`m2m3.js` ③ 3 模板 × 4 主题 × 5 难度 × 3 seed = **180/180**（geometry/oldtown/subject/wudang 各 45/45） |
+| 当前依据 | `smoke.js` §1 全过；`m2m3.js` ③ **6 模板 × 4 主题 × 5 难度 × 3 seed = 360/360**；`fullsuite.js` §B1 另采样 96 局，房间数分布覆盖 3–8 房且 6/7/8 房长局均出现 |
 
 ### 第 4 条
 
@@ -100,11 +107,11 @@
 
 | 项 | 内容 |
 |---|---|
-| 验证方式 | 人工试玩计时单局时长；死亡后按 `R` / `Enter` 一键重开；DevTools → Application → Local Storage 核对 `corridor.meta.v1`（gold / unlocked / runs / clears / bestSeconds）与主题键 `corridor.theme.v1`、LLM 配置键 `corridor.llm.v1`；记录表见 `docs/demo-90s.md` |
-| 命令 | 手动试玩（自动化无法覆盖手感与时长）；`node tests/smoke.js` 间接覆盖重开链路 |
+| 验证方式 | 人工试玩计时单局时长（**目标口径已由提示词的 3–5 分钟收紧为用户要求的 240s ± 30s**）；死亡后按 `R` / `Enter` 一键重开；DevTools → Application → Local Storage 核对 `corridor.meta.v1` 与 `corridor.theme.v1`、`corridor.llm.v1`；记录表见 `docs/demo-90s.md` §3 |
+| 命令 | 手动试玩（自动化无法覆盖手感与时长）；`node tests/fullsuite.js` §B3 间接覆盖状态机可达性 |
 | 负责人 | 全队试玩、qa-release（记录表）；复跑：开发总监 |
 | 状态 | ⏳ 待办 · 人工试玩（自动化无法覆盖） |
-| 当前依据 | 需人工试玩与真机计时，当前未采样；`docs/demo-90s.md` 已备「单局时长 / 重开率」记录表。**自动化部分已覆盖**：浏览器实拍确认开局成功（`phase:playing`）、四主题选择器生效、切主题后命名与 HUD 同步、零 JS 异常（见文末附录） |
+| 当前依据 | 需人工试玩与真机计时，当前未采样，**240s ± 30s 尚未验收**。`fullsuite.js` §B2 给出可复算的理论模型（96 局真实 HP 采样 + 命中率敏感性）：h=0.55 时 6 房约 218s 落入窗口、7 房约 313s、8 房约 376s 偏长；命中率属真人手感范畴，Node 无法测定，**该模型不是验收结论**。§B3 已用真实 `engine.update()` 帧循环验证 6–8 房 + Boss 两阶段 + 结算状态机可达、事件链完整、零异常。浏览器实拍另确认开局成功、四主题选择器生效、切主题后画面与 HUD 同步、零 JS 异常 |
 
 ### 第 7 条
 
@@ -116,7 +123,7 @@
 | 命令 | 分镜与记录表：`docs/demo-90s.md`；录制前置：开始页主题选择器切换主题（键 `corridor.theme.v1`） |
 | 负责人 | qa-release（分镜 / 录制建议）、开发总监（提交视频） |
 | 状态 | ⏳ 待办 · 录制 90 秒视频 |
-| 当前依据 | `docs/demo-90s.md` 已备分镜与记录表；视频尚未录制。录制前置：主题切换 + `templates.reseed` 按主题重映射须联调稳定（`m2m3.js` ③ 当前 180/180 已满足），否则切换主题会触发 `buildRun` 抛异常 |
+| 当前依据 | `docs/demo-90s.md` 已重构为 **v2 高光蒙太奇**（6 个爆点片段、过程全跳剪、两局差异用 HUD 特写同框），口径改为 240s ± 30s；视频尚未录制。录制前置：四套主题独立色板与重映射均已联调（`m2m3.js` ③ 360/360、`fullsuite.js` 46/46、四主题实拍确认） |
 
 ### 第 8 条
 
@@ -143,11 +150,14 @@ node tests/smoke.js
 # 2) M4 集成验收资产（期望 0 failed / 0 waiting；超时场景会真实等待约 8 秒）
 node tests/m2m3.js
 
-# 3) 人工项（自动化无法覆盖，需真机试玩 / 录制）
+# 3) M5「全套」跨层接线 + 节奏量化（期望 0 failed；纯 Node，零端口）
+node tests/fullsuite.js
+
+# 4) 人工项（自动化无法覆盖，需真机试玩 / 录制）
 #    - 断网 / 超时 / 非法返回：DevTools 手动制造，确认 8 秒内降级、开局不阻塞
 #    - 连开 5 局：房间数 / threat 序列 / perk_choices 组合不重复
-#    - 单局 3–5 分钟、死亡后 R/Enter 一键重开、localStorage 进度正确
-#    - 按 docs/demo-90s.md 录制 90 秒视频，填「重开率 / 单局时长」记录表
+#    - 单局 240s ± 30s、死亡后 R/Enter 一键重开、localStorage 进度正确
+#    - 按 docs/demo-90s.md v2 录制 90 秒高光蒙太奇，填「重开率 / 单局时长」记录表
 ```
 
 2026-11-17 开发总监复跑完成：第 1–5 条已转「通过」并署名，第 6–8 条如实保留待办。
@@ -175,3 +185,81 @@ node tests/m2m3.js
 
 截图留存：`D:/SrcCode/Competition/shot-start.png`（开始页）、`shot-play.png`（几何战斗）、
 `shot-oldtown-real.png`（旧城战斗，真实点击流程）。截图为本地临时产物，未纳入仓库。
+
+---
+
+## 附录：M5「全套」集成验收（2026-11-17 · 开发总监）
+
+> 背景：用户要求「美术大改 / 轮数太少 / 90s 不等于录全程 / 单条命 4 分钟 / 不够爽」，
+> 选择「直接上全套」。总监按文件所有权并行拉起 `logic-dev` / `gen-dev` / `visual-dev` / `ui-dev`
+> 四个会话（T24–T27），四方自报完成后**不采信自报数字**，先做磁盘级验收再逐项修复。
+
+### 一、四方落盘核对
+
+- `git status --short`：11 个文件修改，全部在各自独占范围内；`tests/smoke.js`、`core/audio.js` 冻结未动。
+- 基础复跑：`smoke.js` 20/20、`m2m3.js` 58/0/0、11 个 JS `node --check` 全通过。
+- 结论：**代码写了 ≠ 链路通了**。四方报告与静态 grep 共同暴露 5 处跨层缺口，
+  加上浏览器实拍发现的 2 处 UI 瑕疵，共 7 处，全部由总监修复。
+
+### 二、7 处跨层缺口与修复（逐项可核对）
+
+| # | 缺口 | 后果 | 修复落点 |
+|---|---|---|---|
+| 1 | `style.css` 无 `#perk-cards[data-count="3"]` / `.perk-mechanic` / `.perk-synergy` / `.hud-extra` | 三选一变 2+1 畸形布局，新 UI 元素裸奔 | `src/ui/style.css` 追加三列规则与徽标 / 协同 / HUD 样式 |
+| 2 | `perks.js` 只有引擎内部 `synergies(state)`，UI 期待 `synergyHint()` / `SYNERGIES` / `TABLE[id].synergy` | **4 个协同词条的「组合质变」玩家完全看不见** | `src/core/perks.js` 表外注入 `SYNERGIES` 关系表 + `MECHANIC` + `synergyHint()`；冻结区字面值一行未动 |
+| 3 | 机制层 10 词条无 `mechanic` 字段，`mechanicBadge()` 读不到 | 三层构筑在卡面无区分 | 同上 `MECHANIC` 注入 |
+| 4 | `render.js` 的 `ROOM_LABEL` 含 `normal`，而引擎缺省与 Boss 房都设为 `normal` | 普通房 / Boss 房常驻「普通间」徽标，纯噪音 | `src/ui/render.js` 仅保留 `elite/event/rest` |
+| 5 | `engine.js` 发 `roomEvent`，`main.js` 无 case 且不识别该关键字 | 休整回血 / 事件给金币**无任何反馈** | `src/ui/main.js` 新增精确 `case 'roomEvent'`；同时 `roomEnter(normal)` / HUD 不再刷「普通房」 |
+| 6 | 主题标签 append 进 230px 的 `.hud-stats` | 实拍确认右上角中文折行错乱 | `src/ui/screens.js` 改为独占一行 |
+| 7 | HUD 主题标签依赖 `syncThemeUI()` 缓存 | 非开始页 / 程序化切主题时标签停留旧值 | `src/ui/screens.js` 的 `updateHud()` 改为实时读 `C.theme.active()` |
+
+另同步修正 `core/engine.js` 顶部注释：schema 已由 3–5 房扩到 **3–8 房**、6 套模板，
+并注明 `tests/fullsuite.js` 的理论模型**不得冒充真人计时结论**。
+
+### 三、新增验收资产 `tests/fullsuite.js`
+
+纯 Node、零依赖、零构建、**不起端口 / 不起后台进程**。用轻量 DOM stub 按 `index.html`
+顺序加载全部 11 个脚本，真实调用 `screens` / `main` 的弹窗与事件路径：
+
+- §A（34 项）：24 词条与三层接口、冻结区三个派生值零回归、协同提示非空 /
+  无搭档返回空、三选一生成 3 张卡且含机制徽标与协同提示、`roomEvent` /
+  `bossPhase` toast、HUD 主题实时同步、CSS 与事件静态契约、6 套模板与 schema 3–8。
+- §B1：6 模板 × 4 主题共 **96 局**采样，房间数分布覆盖 3–8 房，房间分型与 Boss 校准确认。
+- §B2：按 `calibrate()` 同一公式算整局真实敌人 HP，给出命中率 0.25 / 0.35 / 0.55
+  三档可复算时长区间；**明确标注为理论估算，不做达标 PASS/FAIL 判定**。
+- §B3：真实 `engine.update()` 帧循环（Boss 房改用真实子弹逐发命中以走 `damageEnemy()`
+  的 50% 血判定），验证 6–8 房 + 每房一次选词条 + Boss 两阶段 + `won` 状态机可达、
+  事件链完整、C5 字段齐备、零异常。
+
+**结果：46 passed / 0 failed。**
+
+### 四、四主题视觉实拍（不占端口）
+
+方式：一次性 Edge 无头截图，直接 `file://` 打开，**不开 HTTP 服务、不开调试端口、
+不起后台进程、跑完即退**；诊断页手动驱动 200 帧使画面真实跑起来（非静态摆拍）。
+
+| 主题 | 实拍画面 |
+|---|---|
+| geometry 抽象几何 | 纯深色底、灰色方块墙、青绿圆环玩家 |
+| oldtown 旧城 | 砖墙网格纹理、暖橙光晕、橙色圆环、柱状墙 |
+| subject 学科 | 冷蓝方格纸 + Σ/√/∅/∫ 符号水印、冷蓝血条 |
+| wudang 武当 | 山峦曲线留白、灰青主色、波浪地平线 |
+
+结论：**四套主题不再只换文案**，色板、背景构图、造型与后处理均分化；
+HUD 右上角「主题 旧城」排版整齐、标签实时同步（修复 #6 / #7 已验证）。
+截图为工作区临时产物，未纳入仓库。
+
+### 五、4 分钟目标的如实结论
+
+用户要求单条命通关约 4 分钟。理论模型（h=0.55 均值）：
+**6 房约 218s 落在 240s ± 30s 窗口；7 房约 313s、8 房约 376s 偏长。**
+命中率属真人手感范畴，Node 无法测定，因此 **240s ± 30s 尚未验收**，
+须按 `docs/demo-90s.md` §3.2 记录表人工计时。若实测确认长局偏长，
+校准旋钮为 `src/core/perks.js` 的 `BALANCE.hpBase / hpProgress / bossHpMul`。
+
+### 六、仍待办（不因本轮集成而结案）
+
+- §8 第 6–8 条：真人试玩计时 / 重开率 / 90 秒视频 / 大赛提交。
+- **提交形态缺口**：官方要求 Qoder Sites 公网地址 + 作品帖五部分介绍 + 截图凭证；
+  当前只有 GitHub + `file://`，须用户确认 Qoder 账号与部署路径后推进，总监不擅自公网发布。
+- `git add` / `commit` / `push` 由总监统一执行。
