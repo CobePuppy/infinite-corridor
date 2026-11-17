@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>∞ 回廊 · INFINITE CORRIDOR</title>
+<link rel="stylesheet" href="src/ui/style.css">
+</head>
+<body>
+<div id="app">
+  <div class="stage">
+    <canvas id="game" width="960" height="600"></canvas>
+
+    <div id="hud" class="hud hidden">
+      <div class="hud-left">
+        <div class="brand-mini">∞ 回廊</div>
+        <div class="room-line"><b id="room-name">方庭</b><span id="room-count">第 1 / 3 间</span></div>
+        <div id="room-dots" class="dots"></div>
+      </div>
+      <div class="hud-mid">
+        <div class="hp-row"><span class="hp-label">生命</span><div class="hp-track"><div id="hp-fill" class="hp-fill"></div></div><span id="hp-text" class="hp-text">100 / 100</span></div>
+        <div id="boss-bar" class="boss-bar hidden"><span id="boss-name">合点</span><div class="boss-track"><div id="boss-fill" class="boss-fill"></div></div></div>
+        <div id="hint" class="hint"></div>
+      </div>
+      <div class="hud-right">
+        <div class="hud-stats"><span>金币 <b id="gold">0</b></span><span>用时 <b id="timer">0.0s</b></span><span class="src" id="source">离线模板</span></div>
+        <div id="perk-chips" class="chips"></div>
+        <button id="btn-mute" class="mini-btn" type="button">音效 开</button>
+      </div>
+    </div>
+
+    <div id="toast" class="toast"></div>
+
+    <div id="overlay" class="overlay">
+      <section id="screen-start" class="panel start-panel">
+        <div class="mark"><span class="mark-inf">∞</span><span class="mark-line"></span><span class="mark-en">GEOMETRY / ROGUELITE / 2026</span></div>
+        <h1 class="title">∞ 回廊</h1>
+        <p class="subtitle">INFINITE CORRIDOR</p>
+        <p class="tagline">一局一廊，走廊记得你停在哪。</p>
+        <div class="rules">
+          <div><kbd>W A S D</kbd><span>移动</span></div>
+          <div><kbd>鼠标 / 空格</kbd><span>瞄准并攻击</span></div>
+          <div><kbd>Shift</kbd><span>冲刺（短暂无敌）</span></div>
+          <div><kbd>Esc</kbd><span>暂停</span></div>
+        </div>
+        <div class="start-actions">
+          <button id="btn-start" class="btn primary" type="button">进入回廊 <span>→</span></button>
+          <button id="btn-unlock-start" class="btn ghost" type="button">局外解锁</button>
+        </div>
+        <p class="footnote">打开即玩 · 断网可玩 · 进度存本地 · 每局关卡由 3 套离线模板轮换</p>
+      </section>
+
+      <section id="screen-perk" class="panel perk-panel hidden">
+        <div class="panel-kicker" id="perk-room">第 1 间 通过</div>
+        <h2 class="panel-title">选择一条路径</h2>
+        <p class="panel-desc" id="perk-sub">选一个带进下一间房</p>
+        <div id="perk-cards" class="perk-cards"></div>
+      </section>
+
+      <section id="screen-end" class="panel end-panel hidden">
+        <h2 id="end-title" class="end-title lose">这次停在了这里</h2>
+        <p id="end-summary" class="end-summary"></p>
+        <div id="end-stats" class="stats"></div>
+        <p class="end-gold">持有金币 <b id="end-gold">0</b></p>
+        <div class="end-actions">
+          <button id="btn-restart" class="btn primary" type="button">再来一局 <span>↻</span></button>
+          <button id="btn-unlock" class="btn ghost" type="button">局外解锁</button>
+        </div>
+        <p class="footnote">按 R 或 Enter 也可立刻重开</p>
+      </section>
+
+      <section id="screen-unlock" class="panel unlock-panel hidden">
+        <div class="unlock-head">
+          <div><h2 class="panel-title">局外解锁</h2><p class="panel-desc">用金币换取开局自带的初始词条，效果可叠加</p></div>
+          <div class="wallet">金币 <b id="unlock-gold">0</b></div>
+        </div>
+        <div id="unlock-grid" class="unlock-grid"></div>
+        <button id="unlock-back" class="btn ghost wide" type="button" data-from="start">返回</button>
+      </section>
+    </div>
+  </div>
+
+  <footer class="foot">
+    <span>∞ 回廊 · INFINITE CORRIDOR</span>
+    <span>Canvas 2D · 零美术资源 · 零后端 · M1 无 AI 可玩骨架</span>
+  </footer>
+</div>
+
+<script>window.Corridor = window.Corridor || {};</script>
+<script src="src/core/perks.js"></script>
+<script src="src/core/audio.js"></script>
+<script src="src/core/engine.js"></script>
+<script src="src/theme/index.js"></script>
+<script src="src/gen/templates.js"></script>
+<script src="src/gen/schema.js"></script>
+<script src="src/gen/index.js"></script>
+<script src="src/ui/render.js"></script>
+<script src="src/ui/screens.js"></script>
+<script src="src/ui/main.js"></script>
+</body>
+</html>
