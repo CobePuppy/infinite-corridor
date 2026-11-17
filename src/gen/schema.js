@@ -1,6 +1,7 @@
 /* gen/schema.js — 输出契约校验器（对应提示词 §2 / §5 的 5 条必须实现的校验）
  * 所有关卡数据在进入渲染层之前都必须通过 validate()。
  * 手写实现，零依赖，浏览器与 Node 均可跑。
+ * T25-A：rooms 上限 3–5 → 3–8；新增可选 room.type 枚举；必填/可选字段拆分校验。
  */
 (function (C) {
   'use strict';
@@ -9,10 +10,22 @@
     theme:       ['geometry', 'oldtown', 'subject', 'wudang'],
     shape:       ['arena', 'corridor', 'cross', 'chamber'],
     color_token: ['ink', 'amber', 'teal', 'violet', 'rust'],
-    pattern:     ['chase', 'orbit', 'charge', 'ranged', 'static']
+    pattern:     ['chase', 'orbit', 'charge', 'ranged', 'static'],
+    room_type:   ['normal', 'elite', 'event', 'rest']
   };
 
+  /* ALLOWED = 允许出现的字段全集，供 only() 实现 additionalProperties:false 语义。
+   * REQUIRED = 必填字段集，供 hasAll() 保证字段齐全。
+   * 两者分离（C6）：room.type 为可选字段（缺省等同 M1 的 normal），只进 ALLOWED 不进 REQUIRED；
+   * 若把它直接塞进唯一的必填列表，hasAll 会强制所有房间必填 type，导致既有模板校验失败。 */
   var ALLOWED = {
+    root: ['run_id', 'theme', 'difficulty', 'rooms', 'boss', 'reward_perk_pool', 'summary'],
+    room: ['index', 'name', 'shape', 'color_token', 'threat', 'enemies', 'perk_choices', 'path_hint', 'type'],
+    enemy: ['type', 'count', 'hp', 'damage', 'pattern'],
+    boss: ['name', 'hp', 'damage', 'pattern', 'weakness_perk']
+  };
+
+  var REQUIRED = {
     root: ['run_id', 'theme', 'difficulty', 'rooms', 'boss', 'reward_perk_pool', 'summary'],
     room: ['index', 'name', 'shape', 'color_token', 'threat', 'enemies', 'perk_choices', 'path_hint'],
     enemy: ['type', 'count', 'hp', 'damage', 'pattern'],
@@ -37,11 +50,11 @@
     /* 1. 结构与枚举、范围、数组长度 */
     if (!obj(run)) { return { ok: false, errors: ['run 不是对象'] }; }
     if (!only(run, ALLOWED.root)) bad('root 含多余字段');
-    if (!hasAll(run, ALLOWED.root)) bad('root 缺字段');
+    if (!hasAll(run, REQUIRED.root)) bad('root 缺字段');
     if (typeof run.run_id !== 'string' || run.run_id.indexOf('run_') !== 0) bad('run_id 非法');
     if (ENUM.theme.indexOf(run.theme) === -1) bad('theme 枚举越界');
     if (!isInt(run.difficulty) || run.difficulty < 1 || run.difficulty > 5) bad('difficulty 越界');
-    if (!Array.isArray(run.rooms) || run.rooms.length < 3 || run.rooms.length > 5) bad('rooms 长度须为 3–5');
+    if (!Array.isArray(run.rooms) || run.rooms.length < 3 || run.rooms.length > 8) bad('rooms 长度须为 3–8');
     if (typeof run.summary !== 'string' || run.summary.length > 80) bad('summary 超长或非字符串');
     FORBIDDEN_SUMMARY.forEach(function (w) {
       if (typeof run.summary === 'string' && run.summary.indexOf(w) !== -1) bad('summary 含元信息词: ' + w);
@@ -59,14 +72,17 @@
     (run.rooms || []).forEach(function (r, i) {
       if (!obj(r)) { bad('room[' + i + '] 非对象'); return; }
       if (!only(r, ALLOWED.room)) bad('room[' + i + '] 含多余字段');
-      if (!hasAll(r, ALLOWED.room)) bad('room[' + i + '] 缺字段');
+      if (!hasAll(r, REQUIRED.room)) bad('room[' + i + '] 缺字段');
+      /* C6：type 可选，仅当显式出现时校验枚举；缺省等同 M1(normal)，不校验、不强制。 */
+      if (Object.prototype.hasOwnProperty.call(r, 'type') &&
+          ENUM.room_type.indexOf(r.type) === -1) bad('room.type 枚举越界 @' + i);
       if (r.index !== i) bad('room[' + i + '].index 应为 ' + i);
       if (!vocab || vocab.room_names.indexOf(r.name) === -1) bad('房间名越界: ' + r.name);
       if (ENUM.shape.indexOf(r.shape) === -1) bad('shape 枚举越界 @' + i);
       if (ENUM.color_token.indexOf(r.color_token) === -1) bad('color_token 枚举越界 @' + i);
       if (!isInt(r.threat) || r.threat < 1 || r.threat > 5) bad('threat 越界 @' + i);
 
-      /* 3. 单调性 + difficulty 对应的最低威胁档 */
+      /* 3. 单调性 + difficulty 对应的最低威胁档（逐房比较，天然适配 3–8 房） */
       if (r.threat < prevThreat) bad('threat 非单调 @' + i);
       var minThreat = Math.min(5, 1 + Math.floor(((run.difficulty || 1) - 1) / 2));
       if (r.threat < minThreat) bad('threat 低于 difficulty 下限 @' + i);
@@ -88,7 +104,7 @@
       (r.enemies || []).forEach(function (e, j) {
         if (!obj(e)) { bad('enemy[' + i + '][' + j + '] 非对象'); return; }
         if (!only(e, ALLOWED.enemy)) bad('enemy 含多余字段 @' + i + '.' + j);
-        if (!hasAll(e, ALLOWED.enemy)) bad('enemy 缺字段 @' + i + '.' + j);
+        if (!hasAll(e, REQUIRED.enemy)) bad('enemy 缺字段 @' + i + '.' + j);
         if (!vocab || vocab.enemy_types.indexOf(e.type) === -1) bad('敌人 id 越界: ' + e.type);
         if (ENUM.pattern.indexOf(e.pattern) === -1) bad('pattern 枚举越界 @' + i + '.' + j);
         if (!isInt(e.count) || e.count < 1 || e.count > 6) bad('count 越界 @' + i + '.' + j);
@@ -101,7 +117,9 @@
       maxDmgByRoom.push(roomMaxDmg);
     });
 
-    /* 5. 数值随房间序号递增 */
+    /* 5. 数值随房间序号递增（循环上界取数组长度，天然适配 3–8 房）。
+     * 数值范围保持 M1 原上限：8 房强度曲线在 reseed 缩放后的峰值仍落在范围内，
+     * 不放宽上限以免降低校验强度（C11），smoke §4 故意错误用例仍被拒。 */
     for (var k = 1; k < maxHpByRoom.length; k++) {
       if (maxHpByRoom[k] < maxHpByRoom[k - 1]) bad('enemy.hp 未随房间递增 @' + k);
       if (maxDmgByRoom[k] < maxDmgByRoom[k - 1]) bad('enemy.damage 未随房间递增 @' + k);
@@ -110,7 +128,7 @@
     if (!obj(run.boss)) bad('boss 非对象');
     else {
       if (!only(run.boss, ALLOWED.boss)) bad('boss 含多余字段');
-      if (!hasAll(run.boss, ALLOWED.boss)) bad('boss 缺字段');
+      if (!hasAll(run.boss, REQUIRED.boss)) bad('boss 缺字段');
       if (!vocab || vocab.boss_names.indexOf(run.boss.name) === -1) bad('boss 名越界: ' + run.boss.name);
       if (ENUM.pattern.indexOf(run.boss.pattern) === -1) bad('boss.pattern 枚举越界');
       if (!isInt(run.boss.hp) || run.boss.hp < 120 || run.boss.hp > 400) bad('boss.hp 越界');
@@ -122,5 +140,5 @@
   }
 
   C.gen = C.gen || {};
-  C.gen.schema = { validate: validate, ENUM: ENUM, ALLOWED: ALLOWED };
+  C.gen.schema = { validate: validate, ENUM: ENUM, ALLOWED: ALLOWED, REQUIRED: REQUIRED };
 })(window.Corridor = window.Corridor || {});

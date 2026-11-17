@@ -1,5 +1,6 @@
-/* ui/screens.js — DOM 覆盖层：开始页 / HUD / 二选一词条弹窗 / 结算页 / 局外解锁页
+/* ui/screens.js — DOM 覆盖层：开始页 / HUD / 词条弹窗 / 结算页 / 局外解锁页
  * 视觉排版交给 CSS，这里只做状态与内容填充。
+ * 约定：T27 新增的字段/接口/DOM 均为「可选增强」，缺失时行为等同 M1。
  */
 (function (C) {
   'use strict';
@@ -30,10 +31,136 @@
 
   function rarityClass(r) { return 'r-' + r; }
 
+  /* ---------- T27 通用小工具（纯函数，不改写既有状态） ---------- */
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+
+  /* 房间类型 → 中文标签：兼容常见英文枚举、中文直传与未知值 */
+  var ROOM_TYPE_LABEL = {
+    normal: '普通', common: '普通', ordinary: '普通', basic: '普通', plain: '普通',
+    elite: '精英',
+    event: '事件',
+    rest: '休整', respite: '休整', recovery: '休整', heal: '休整', safe: '休整'
+  };
+  function roomTypeLabel(v) {
+    if (v == null || v === '') return '';
+    var s = String(v);
+    var low = s.toLowerCase();
+    if (ROOM_TYPE_LABEL[low]) return ROOM_TYPE_LABEL[low];
+    if (['普通', '精英', '事件', '休整'].indexOf(s) !== -1) return s;
+    return s; // 未知枚举原样显示，避免出现空白，交由 logic-dev 对齐
+  }
+
+  /* 可选容器填充：字段缺失/空 → 隐藏并清空；存在 → 显示。容器不存在也不抛 */
+  function fillOptional(id, text) {
+    var el = $(id);
+    if (!el) return;
+    if (text == null || text === '') {
+      el.textContent = '';
+      el.classList.add('hidden');
+    } else {
+      el.textContent = text;
+      el.classList.remove('hidden');
+    }
+  }
+
+  /* 切主题即时刷新 #app 的 data-theme；开局时 main.js 会再兜一次 */
+  function applyThemeAttr(id) {
+    try {
+      var app = $('app');
+      var v = id || (C.theme && typeof C.theme.active === 'function' ? C.theme.active() : '');
+      if (app) app.dataset.theme = v || '';
+    } catch (e) { /* 主题接口暂缺时不影响开局 */ }
+  }
+
+  /* ---------- 协同提示：全部软依赖，接口缺失/异常一律返回 ''（不渲染） ---------- */
+  function textOf(v) {
+    if (!v) return '';
+    if (typeof v === 'string') return v;
+    if (typeof v === 'object') return String(v.text || v.hint || v.label || v.desc || '');
+    return String(v);
+  }
+
+  /* 把可能是 字符串 / 数组 / {with,ids,...} 的可选关系字段规整为 id 数组 */
+  function toIdList(v) {
+    if (!v) return [];
+    if (typeof v === 'string') return [v];
+    if (Array.isArray(v)) {
+      return v.map(function (x) {
+        if (x && typeof x === 'object') return x.id || x.perk || x.with || '';
+        return x == null ? '' : String(x);
+      }).filter(Boolean);
+    }
+    if (typeof v === 'object') {
+      var arr = v.with || v.ids || v.perks || v.partners || v.targets || v.combo;
+      return arr ? toIdList(arr) : [];
+    }
+    return [];
+  }
+
+  function ownedPerkIds() {
+    try {
+      var st = (C.core && C.core.engine && C.core.engine.getState) ? C.core.engine.getState() : null;
+      var perks = (st && st.perks) || {};
+      return Object.keys(perks).filter(function (k) { return perks[k] > 0; });
+    } catch (e) { return []; }
+  }
+
+  /* 若候选词条与「本局已持有词条」能触发协同，返回简短提示；否则 '' */
+  function synergyHint(id, owned) {
+    try {
+      var P = (C.core && C.core.perks) || {};
+      var TABLE = P.TABLE || {};
+      var def = TABLE[id] || {};
+      var st = (C.core && C.core.engine && C.core.engine.getState) ? C.core.engine.getState() : null;
+
+      // ① logic-dev 可能新增的模块级查询函数（它内部自行判定协同）
+      if (typeof P.synergyHint === 'function') {
+        var r = null;
+        try { r = P.synergyHint(id, owned); } catch (e) { r = null; }
+        if (!r) { try { r = P.synergyHint(id, st); } catch (e2) { r = null; } }
+        var t = textOf(r);
+        if (t) return t;
+      }
+
+      // ② 关系定义：TABLE 条目字段 / 模块级 SYNERGIES 表（均可选）
+      var partners = toIdList(def.synergy || def.synergyWith || def.comboWith || def.combos);
+      var synTable = P.SYNERGIES || P.synergies || P.COMBOS || null;
+      var row = (synTable && typeof synTable === 'object') ? synTable[id] : null;
+      if (row) partners = partners.concat(toIdList(row));
+
+      var matched = partners.filter(function (pid) { return owned.indexOf(pid) !== -1; });
+
+      // ③ 可选提示文本字段
+      var note = textOf(def.synergyHint || def.synergyText || def.comboHint || def.comboNote ||
+        (def.synergy && typeof def.synergy === 'object' ? def.synergy : null) ||
+        (row && typeof row === 'object' ? row : null));
+
+      if (matched.length) {
+        var names = matched.map(function (pid) { return (TABLE[pid] || {}).name || pid; });
+        return '协同 · 已持有「' + names.join('、') + '」' + (note ? ' · ' + note : '');
+      }
+      return ''; // 无协同关系 / 接口缺失 → 不渲染，避免刷屏
+    } catch (e) { return ''; }
+  }
+
+  function mechanicBadge(def) {
+    var m = def && (def.mechanic || def.mechanics || def.mechanicTag);
+    var t = textOf(m);
+    return t ? '<span class="perk-mechanic">' + esc(t) + '</span>' : '';
+  }
+  function synergyBlock(hint) {
+    return hint ? '<div class="perk-synergy">' + esc(hint) + '</div>' : '';
+  }
+
   /* 主题选择状态：选择器与 HUD 标签均由 JS 注入，不触碰 index.html 静态结构 */
   function syncThemeUI() {
     var id = C.theme.active();
-    themeLabel = C.theme.get(id).label;
+    themeLabel = (C.theme.get(id) || {}).label || id || '';
+    applyThemeAttr(id);
     Array.prototype.forEach.call(document.querySelectorAll('.theme-opt'), function (b) {
       var on = b.dataset.theme === id;
       b.classList.toggle('active', on);
@@ -48,7 +175,12 @@
     var tag = document.createElement('span');
     tag.className = 'theme-tag';
     tag.innerHTML = '<span class="theme-tag-k">主题</span> <b id="hud-theme"></b>';
-    stats.appendChild(tag);
+    /* T28：主题标签独占一行。原先 append 进 .hud-stats 会与「金币 / 用时 / 来源」
+     * 挤在 230px 宽度里，中文被折成多行、右上角排版错乱（浏览器实拍确认）。 */
+    var parent = stats.parentNode;
+    if (!parent) return;
+    if (stats.nextSibling) parent.insertBefore(tag, stats.nextSibling);
+    else parent.appendChild(tag);
   }
 
   function buildThemePicker() {
@@ -80,35 +212,75 @@
   }
 
   function perkCard(id, opts) {
-    var def = C.core.perks.TABLE[id];
     opts = opts || {};
+    var T = (C.core && C.core.perks && C.core.perks.TABLE) || {};
+    var RL = (C.core && C.core.perks && C.core.perks.RARITY_LABEL) || {};
+    /* logic-dev 可能新增词条但 TABLE 尚未同步 → 回退骨架，避免抛异常 */
+    var def = T[id] || { id: id, name: id, desc: '', rarity: 'common', tag: '' };
+    var rarityLabel = RL[def.rarity] || def.rarity || '';
     var d = document.createElement('button');
     d.className = 'perk-card ' + rarityClass(def.rarity) + (opts.locked ? ' locked' : '');
     d.type = 'button';
     d.innerHTML =
-      '<div class="perk-top"><span class="perk-rarity">' + C.core.perks.RARITY_LABEL[def.rarity] + '</span>' +
-      '<span class="perk-tag">' + def.tag + '</span></div>' +
-      '<div class="perk-name">' + def.name + '</div>' +
-      '<div class="perk-desc">' + def.desc + '</div>' +
-      '<div class="perk-id">' + def.id + '</div>' +
+      '<div class="perk-top"><span class="perk-rarity">' + esc(rarityLabel) + '</span>' +
+      '<span class="perk-tag">' + esc(def.tag || '') + '</span>' +
+      mechanicBadge(def) + '</div>' +
+      '<div class="perk-name">' + esc(def.name || id) + '</div>' +
+      '<div class="perk-desc">' + esc(def.desc || '') + '</div>' +
+      synergyBlock(opts.synergy) +
+      '<div class="perk-id">' + esc(def.id || id) + '</div>' +
       (opts.footer || '');
     if (opts.locked) d.disabled = true;
     else if (!opts.noPick) d.addEventListener('click', function () { handlers.onPick && handlers.onPick(id); });
     return d;
   }
 
+  /* C8：候选数由 choices 决定，2 或 3（乃至其它数量）均动态生成，不写死 2 */
   function showPerk(choices, nextIsBoss) {
     var box = $('perk-cards');
-    box.innerHTML = '';
-    choices.forEach(function (id) { box.appendChild(perkCard(id)); });
+    if (box) {
+      box.innerHTML = '';
+      var list = Array.isArray(choices) ? choices : [];  // 缺省/异常形态安全
+      /* 供 visual-dev 的 CSS 按候选数布局（可选消费 [data-count]）；M1 下为 2，外观不变 */
+      try { box.dataset.count = String(list.length); } catch (e) { /* 忽略 */ }
+      var owned = ownedPerkIds();
+      list.forEach(function (id) {
+        box.appendChild(perkCard(id, { synergy: synergyHint(id, owned) }));
+      });
+    }
     $('perk-sub').textContent = nextIsBoss ? '选完即将进入终室 · 迎接本局的首领' : '选一个带进下一间房 · 效果可叠加';
-    $('perk-room').textContent = '第 ' + (C.core.engine.getState().roomIndex + 1) + ' 间 通过';
+    var st = (C.core && C.core.engine && C.core.engine.getState) ? (C.core.engine.getState() || {}) : {};
+    $('perk-room').textContent = '第 ' + ((st.roomIndex || 0) + 1) + ' 间 通过';
     show('perk');
   }
 
   function updateHud(s) {
     var hudTheme = $('hud-theme');
-    if (hudTheme) hudTheme.textContent = themeLabel;
+    /* T28：实时取当前主题，不再依赖 syncThemeUI() 的缓存值。
+     * 原先若通过非开始页入口 / 程序化 setActive() 切主题，HUD 标签会停留在旧值
+     * （acceptance.md 附录已记录该现象）。每帧读一次 active() 成本可忽略。 */
+    if (hudTheme) {
+      try {
+        var tid = C.theme.active();
+        hudTheme.textContent = (C.theme.get(tid) || {}).label || tid || themeLabel;
+      } catch (e) { hudTheme.textContent = themeLabel; }
+    }
+
+    /* T27-B 可选 HUD 字段：缺省 → 隐藏（等同 M1）；任何异常不影响主 HUD */
+    try {
+      var st = s || {};
+      var combo = st.combo;
+      fillOptional('hud-combo',
+        (typeof combo === 'number' && combo >= 2) ? ('连击 ×' + combo) : '');
+      /* T28：normal 为默认态，与 render.js 徽标策略保持一致，不常显「房间 · 普通」 */
+      var rt = st.roomType;
+      fillOptional('hud-room-type',
+        (rt != null && rt !== '' && String(rt).toLowerCase() !== 'normal') ? ('房间 · ' + roomTypeLabel(rt)) : '');
+      var bp = st.bossPhase;
+      fillOptional('hud-boss-phase',
+        (typeof bp === 'number' && bp >= 2) ? ('首领 · 第 ' + bp + ' 阶段') : '');
+    } catch (e) { /* 新字段读取异常时保持隐藏即可 */ }
+
     if (!s || !s.room) return;
     var p = s.player;
     var ratio = Math.max(0, p.hp / p.maxHp);
@@ -223,6 +395,7 @@
   C.ui = C.ui || {};
   C.ui.screens = {
     init: init, show: show, toast: toast, showPerk: showPerk,
-    updateHud: updateHud, showEnd: showEnd, showUnlock: showUnlock, setMuted: setMuted
+    updateHud: updateHud, showEnd: showEnd, showUnlock: showUnlock, setMuted: setMuted,
+    roomTypeLabel: roomTypeLabel
   };
 })(window.Corridor = window.Corridor || {});

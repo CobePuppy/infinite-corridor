@@ -13,20 +13,30 @@
   --rust:#D9644B;
   --font:"PingFang SC","Microsoft YaHei","Hiragino Sans GB",system-ui,-apple-system,sans-serif;
   --mono:ui-monospace,"SFMono-Regular","JetBrains Mono",Consolas,monospace;
+  /* 主题派生变量：rgba 边框/阴影/发光统一由 rgb 三元组派生，
+     [data-theme] 只需覆盖 4 个 rgb 三元组即可让整套 HUD 随主题变色。
+     缺省值 = M1 原硬编码值，故无 data-theme 时外观零变化。 */
+  --teal-rgb:57,198,165;
+  --amber-rgb:233,162,59;
+  --violet-rgb:142,124,232;
+  --rust-rgb:217,100,75;
+  --violet-soft:#C3B7FF;
+  --amber-soft:#F5C879;
+  --on-primary:#06231C;
 }
 *{box-sizing:border-box}
 html,body{height:100%}
 body{
   margin:0;background:var(--bg);color:var(--text);font-family:var(--font);
   display:flex;align-items:center;justify-content:center;
-  background-image:radial-gradient(circle at 18% 16%,rgba(57,198,165,.07),transparent 42%),
-                   radial-gradient(circle at 84% 82%,rgba(142,124,232,.07),transparent 44%);
+  background-image:radial-gradient(circle at 18% 16%,rgba(var(--teal-rgb),.07),transparent 42%),
+                   radial-gradient(circle at 84% 82%,rgba(var(--violet-rgb),.07),transparent 44%);
   -webkit-font-smoothing:antialiased;
 }
 #app{width:100%;display:flex;flex-direction:column;align-items:center;gap:14px;padding:22px 16px}
 .stage{
   position:relative;width:min(1100px,96vw);aspect-ratio:960/600;
-  border:1px solid rgba(57,198,165,.18);border-radius:16px;overflow:hidden;
+  border:1px solid rgba(var(--teal-rgb),.18);border-radius:16px;overflow:hidden;
   background:#0B0E15;box-shadow:0 26px 80px rgba(0,0,0,.55),0 0 0 1px rgba(255,255,255,.02) inset;
 }
 canvas{display:block;width:100%;height:100%}
@@ -47,9 +57,9 @@ canvas{display:block;width:100%;height:100%}
 .dots{display:flex;gap:5px;margin-top:9px;align-items:center}
 .dot{width:16px;height:4px;border-radius:2px;background:rgba(255,255,255,.13)}
 .dot.done{background:var(--teal)}
-.dot.now{background:var(--amber);box-shadow:0 0 8px rgba(233,162,59,.6)}
+.dot.now{background:var(--amber);box-shadow:0 0 8px rgba(var(--amber-rgb),.6)}
 .dot.boss{width:8px;height:8px;border-radius:50%;background:rgba(217,100,75,.3)}
-.dot.boss.now{background:var(--rust);box-shadow:0 0 10px rgba(217,100,75,.7)}
+.dot.boss.now{background:var(--rust);box-shadow:0 0 10px rgba(var(--rust-rgb),.7)}
 .dot.boss.done{background:var(--teal)}
 .hud-mid{flex:1;min-width:0}
 .hp-row{display:flex;align-items:center;gap:10px}
@@ -70,8 +80,8 @@ canvas{display:block;width:100%;height:100%}
 .chips{display:flex;flex-wrap:wrap;gap:4px;justify-content:flex-end;max-height:42px;overflow:hidden}
 .chip{font-size:10px;padding:2px 7px;border-radius:20px;border:1px solid var(--line);color:var(--muted);white-space:nowrap}
 .chip.r-common{border-color:rgba(255,255,255,.16)}
-.chip.r-rare{border-color:rgba(142,124,232,.5);color:#C3B7FF}
-.chip.r-epic{border-color:rgba(233,162,59,.55);color:#F5C879}
+.chip.r-rare{border-color:rgba(var(--violet-rgb),.5);color:var(--violet-soft)}
+.chip.r-epic{border-color:rgba(var(--amber-rgb),.55);color:var(--amber-soft)}
 .mini-btn{font-size:10px;padding:3px 9px;border-radius:5px;border:1px solid var(--line);
   background:transparent;color:var(--muted);cursor:pointer;font-family:var(--mono)}
 .mini-btn:hover{color:var(--text);border-color:var(--teal)}
@@ -85,14 +95,14 @@ canvas{display:block;width:100%;height:100%}
 .overlay.dim{background:rgba(8,11,18,.84);backdrop-filter:blur(7px)}
 .panel{
   width:min(600px,100%);max-height:100%;overflow:auto;
-  background:var(--panel);border:1px solid rgba(57,198,165,.20);border-radius:18px;
+  background:var(--panel);border:1px solid rgba(var(--teal-rgb),.20);border-radius:18px;
   padding:34px 38px;box-shadow:0 24px 70px rgba(0,0,0,.6);
   animation:rise .35s cubic-bezier(.2,.8,.2,1) both;
 }
 @keyframes rise{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:translateY(0)}}
 .mark{display:flex;align-items:center;gap:10px;margin-bottom:18px}
 .mark-inf{font-size:26px;line-height:1;color:var(--teal)}
-.mark-line{width:36px;height:1px;background:rgba(57,198,165,.5)}
+.mark-line{width:36px;height:1px;background:rgba(var(--teal-rgb),.5)}
 .mark-en{font-family:var(--mono);font-size:10px;letter-spacing:2px;color:var(--dim)}
 .title{font-size:52px;line-height:1.05;margin:0;font-weight:600;letter-spacing:2px}
 .subtitle{font-family:var(--mono);font-size:12px;letter-spacing:6px;color:var(--teal);margin:8px 0 0}
@@ -109,8 +119,8 @@ kbd{font-family:var(--mono);font-size:10px;padding:4px 8px;border-radius:5px;
   letter-spacing:.5px;
 }
 .btn:hover{transform:translateY(-2px)}
-.btn.primary{background:var(--teal);color:#06231C;font-weight:600;box-shadow:0 8px 24px rgba(57,198,165,.22)}
-.btn.primary:hover{box-shadow:0 12px 30px rgba(57,198,165,.34)}
+.btn.primary{background:var(--teal);color:var(--on-primary);font-weight:600;box-shadow:0 8px 24px rgba(var(--teal-rgb),.22)}
+.btn.primary:hover{box-shadow:0 12px 30px rgba(var(--teal-rgb),.34)}
 .btn.primary span{margin-left:8px}
 .btn.ghost{background:transparent;border-color:var(--line);color:var(--muted)}
 .btn.ghost:hover{color:var(--text);border-color:var(--teal)}
@@ -128,12 +138,12 @@ kbd{font-family:var(--mono);font-size:10px;padding:4px 8px;border-radius:5px;
   display:flex;flex-direction:column;gap:8px;min-height:150px;
 }
 .perk-card:hover{transform:translateY(-5px);border-color:var(--teal);box-shadow:0 14px 34px rgba(0,0,0,.4)}
-.perk-card.r-rare:hover{border-color:var(--violet);box-shadow:0 14px 34px rgba(142,124,232,.18)}
-.perk-card.r-epic:hover{border-color:var(--amber);box-shadow:0 14px 34px rgba(233,162,59,.18)}
+.perk-card.r-rare:hover{border-color:var(--violet);box-shadow:0 14px 34px rgba(var(--violet-rgb),.18)}
+.perk-card.r-epic:hover{border-color:var(--amber);box-shadow:0 14px 34px rgba(var(--amber-rgb),.18)}
 .perk-top{display:flex;justify-content:space-between;align-items:center}
 .perk-rarity{font-size:10px;padding:2px 8px;border-radius:20px;border:1px solid var(--line);color:var(--muted)}
-.r-rare .perk-rarity{border-color:rgba(142,124,232,.55);color:#C3B7FF}
-.r-epic .perk-rarity{border-color:rgba(233,162,59,.55);color:#F5C879}
+.r-rare .perk-rarity{border-color:rgba(var(--violet-rgb),.55);color:var(--violet-soft)}
+.r-epic .perk-rarity{border-color:rgba(var(--amber-rgb),.55);color:var(--amber-soft)}
 .perk-tag{font-size:10px;color:var(--dim)}
 .perk-name{font-size:22px;font-weight:500;letter-spacing:1px}
 .perk-desc{font-size:12px;color:var(--muted);line-height:1.6;flex:1}
@@ -147,7 +157,7 @@ kbd{font-family:var(--mono);font-size:10px;padding:4px 8px;border-radius:5px;
 .end-title.win{color:var(--teal)}
 .end-title.lose{color:var(--rust)}
 .end-summary{font-size:13px;color:var(--muted);line-height:1.8;margin:0 0 24px;
-  border-left:2px solid rgba(57,198,165,.4);padding-left:14px}
+  border-left:2px solid rgba(var(--teal-rgb),.4);padding-left:14px}
 .stats{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:20px}
 .stat{display:flex;flex-direction:column;gap:4px;padding:14px 10px;background:var(--panel-2);
   border:1px solid var(--line);border-radius:10px;text-align:center}
@@ -169,7 +179,7 @@ kbd{font-family:var(--mono);font-size:10px;padding:4px 8px;border-radius:5px;
 .toast{
   position:absolute;left:50%;bottom:22px;transform:translate(-50%,10px);z-index:6;
   font-size:12px;color:var(--text);background:rgba(17,23,37,.94);
-  border:1px solid rgba(57,198,165,.3);border-radius:9px;padding:10px 18px;
+  border:1px solid rgba(var(--teal-rgb),.3);border-radius:9px;padding:10px 18px;
   opacity:0;pointer-events:none;transition:opacity .2s ease,transform .2s ease;
   max-width:80%;text-align:center;box-shadow:0 10px 30px rgba(0,0,0,.4);
 }
@@ -198,8 +208,8 @@ kbd{font-family:var(--mono);font-size:10px;padding:4px 8px;border-radius:5px;
 }
 .theme-opt:hover{color:var(--text);border-color:var(--teal);transform:translateY(-2px)}
 .theme-opt.active{
-  color:#06231C;background:var(--teal);border-color:var(--teal);font-weight:600;
-  box-shadow:0 6px 18px rgba(57,198,165,.22);
+  color:var(--on-primary);background:var(--teal);border-color:var(--teal);font-weight:600;
+  box-shadow:0 6px 18px rgba(var(--teal-rgb),.22);
 }
 .theme-opt.active:hover{transform:none}
 .theme-tag{display:inline-flex;align-items:center;gap:5px}
@@ -208,4 +218,73 @@ kbd{font-family:var(--mono);font-size:10px;padding:4px 8px;border-radius:5px;
 @media (max-width:820px){
   .theme-opt{padding:7px 11px;font-size:11px}
   .theme-picker-label{margin-bottom:8px}
+}
+
+/* ---------- T26-D 主题化（C7：ui-dev 在开局设 #app.dataset.theme = C.theme.active()） ----------
+ * 选择器精确限定 #app，避免误命中带 data-theme 的 .theme-opt 按钮。
+ * 用 4 个 rgb 三元组派生所有边框/阴影/发光，换主题时 HUD、面板、按钮整体变色。
+ * 无 data-theme 或 [data-theme="geometry"] 时取 :root 默认值，外观与 M1 完全一致。 */
+#app[data-theme="geometry"]{
+  --bg:#080B12;--panel:#111725;--panel-2:#171E30;
+  --text:#EDF2F7;--muted:#8C97AB;--dim:#5C6779;
+  --teal:#39C6A5;--amber:#E9A23B;--violet:#8E7CE8;--rust:#D9644B;
+  --teal-rgb:57,198,165;--amber-rgb:233,162,59;--violet-rgb:142,124,232;--rust-rgb:217,100,75;
+  --teal-soft:rgba(57,198,165,.14);--violet-soft:#C3B7FF;--amber-soft:#F5C879;--on-primary:#06231C;
+}
+/* oldtown · 潮湿市井暖光：暖褐面板，灯橘 / 苔绿 / 藕紫 / 砖红 */
+#app[data-theme="oldtown"]{
+  --bg:#120D09;--panel:#1E1712;--panel-2:#2A1F17;
+  --text:#F6EBDC;--muted:#B49C82;--dim:#7A6450;
+  --teal:#78A88E;--amber:#F2A63C;--violet:#A5818C;--rust:#C25736;
+  --teal-rgb:120,168,142;--amber-rgb:242,166,60;--violet-rgb:165,129,140;--rust-rgb:194,87,54;
+  --teal-soft:rgba(120,168,142,.14);--violet-soft:#D8B6BF;--amber-soft:#F8CE8A;--on-primary:#2A1608;
+}
+/* subject · 清冷学理：墨蓝面板，钢笔冷蓝 / 粉笔黄 / 靛紫 / 批注红 */
+#app[data-theme="subject"]{
+  --bg:#080E16;--panel:#0F1A26;--panel-2:#162434;
+  --text:#EAF1F8;--muted:#8FA2B8;--dim:#586B82;
+  --teal:#5FA6C9;--amber:#D8B06A;--violet:#7E88C8;--rust:#B45E58;
+  --teal-rgb:95,166,201;--amber-rgb:216,176,106;--violet-rgb:126,136,200;--rust-rgb:180,94,88;
+  --teal-soft:rgba(95,166,201,.14);--violet-soft:#B9C0EE;--amber-soft:#EBD3A2;--on-primary:#0A1622;
+}
+/* wudang · 山岚留白：淡墨青灰面板，灰青 / 暖木金 / 远山紫 / 朱砂 */
+#app[data-theme="wudang"]{
+  --bg:#141A1C;--panel:#1C2527;--panel-2:#26302F;
+  --text:#EFF2EE;--muted:#9BA9A2;--dim:#66756E;
+  --teal:#6F9C8D;--amber:#C9A579;--violet:#8E8CAA;--rust:#A96357;
+  --teal-rgb:111,156,141;--amber-rgb:201,165,121;--violet-rgb:142,140,170;--rust-rgb:169,99,87;
+  --teal-soft:rgba(111,156,141,.14);--violet-soft:#C3C1D6;--amber-soft:#E2CDA9;--on-primary:#14201C;
+}
+
+/* ---------- T28 集成修复：三选一词条卡 / 机制徽标 / 协同提示 / HUD 扩展 ----------
+ * screens.js 的 showPerk() 会写 #perk-cards[data-count="2|3"]，这里按候选数切列数；
+ * 无 data-count 时维持 M1 两列，外观不变。 */
+#perk-cards[data-count="3"]{grid-template-columns:repeat(3,1fr);gap:11px}
+#perk-cards[data-count="3"] .perk-card{padding:14px;min-height:168px}
+#perk-cards[data-count="3"] .perk-name{font-size:19px}
+#perk-cards[data-count="3"] .perk-desc{font-size:11px}
+#perk-cards[data-count="1"]{grid-template-columns:1fr}
+
+/* 词条卡顶部三项（稀有度 / 分类 / 机制徽标）自适应排布 */
+.perk-top{display:flex;justify-content:space-between;align-items:center;gap:6px;flex-wrap:wrap}
+.perk-mechanic{
+  font-size:10px;line-height:1.4;padding:2px 7px;border-radius:20px;white-space:nowrap;
+  color:var(--teal);background:rgba(var(--teal-rgb),.10);
+  border:1px solid rgba(var(--teal-rgb),.34);
+}
+.perk-synergy{
+  font-size:11px;line-height:1.5;color:var(--amber-soft);
+  background:rgba(var(--amber-rgb),.10);border:1px solid rgba(var(--amber-rgb),.28);
+  border-radius:7px;padding:7px 9px;
+}
+/* HUD 新增可选字段：连击 / 房间类型 / Boss 阶段 */
+.hud-extra{
+  font-size:10px;font-family:var(--mono);line-height:1.4;
+  margin-top:5px;letter-spacing:.3px;color:var(--amber-soft);
+  text-shadow:0 0 8px rgba(var(--amber-rgb),.25);
+}
+#hud-boss-phase{color:#F0A69A;text-shadow:0 0 8px rgba(var(--rust-rgb),.35)}
+#hud-combo{color:var(--amber-soft)}
+@media (max-width:820px){
+  #perk-cards[data-count="3"]{grid-template-columns:1fr}
 }

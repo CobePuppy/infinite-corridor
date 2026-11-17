@@ -1,9 +1,32 @@
 /* core/engine.js — 规则引擎（完全不依赖 AI 的可玩闭环）
  * 移动、碰撞、伤害、词条效果、房间推进、死亡与重开。
  * 所有效果数值只从 core/perks.js 查表；关卡 JSON 只提供结构与白名单 id。
- */
+ *
+ * ── T24-C 4 分钟节奏估算模型 ────────────────────────────────────────────
+ * 目标：单条命通关 6–8 房 + Boss ≈ 240 秒。
+ *   T = Σ 清房战斗 + Boss 战 + 转场/选词条
+ *     ≈ 25s × 7 房(=175s) + 50s Boss + 15s 转场/选词条 = 240s
+ *   单房 25s：入场走位 ~5s、清场 ~16s（瞄准/拉扯/精英词缀）、走向出口 ~4s。
+ *   Boss 50s：P1 约 30s 打掉前半血；50% 血切 P2，弹幕加密 + 移速提升，
+ *     需更多闪避使等效 DPS 下降，约 20s 收尾。
+ * 校准手段（刻意不靠单纯堆血，配合房间分型与阶段变化）：
+ *   1) 房间敌人 hp 随进度线性放大 1.15→1.70 倍（B.hpBase / B.hpProgress）；
+ *   2) 后半段每类敌人 +1 只（B.countAfter / B.countBonus）；
+ *   3) elite 房再叠加 hp×1.35 / 伤害 +2 / +1 只（见房间分型）；
+ *   4) Boss hp ×1.25，且 50% 血切 P2 提移速、加密弹幕。
+ * 基础手感常量（BULLET_DMG / FIRE_CD / SPEED / DASH_* 等）保持 v1 不动。
+ * 注：房间数由关卡 JSON 决定 —— T25 后 schema 允许 3–8 房、共 6 套模板，本模型按 7 房标称；
+ *     T28 已补 `tests/fullsuite.js`：按 calibrate 同一公式采样整局真实敌人 HP，
+ *     给出命中率敏感性区间，并用真实 engine.update() 帧循环验证状态机可达性。
+ *     但命中率属真人手感范畴，Node 无法测定，**240s 是否达成仍须按
+ *     docs/demo-90s.md §3 记录表人工计时**，不得用理论模型冒充验收结论。
+ * ──────────────────────────────────────────────────────────────────────── */
 (function (C) {
   'use strict';
+
+  /* 依赖 index.html 固定加载顺序：perks.js 先于 engine.js。所有新增「词条效果数值」
+   * 集中在 perks.js 的 derive()/on()/BALANCE，engine 只消费；基础手感/碰撞参数沿用 v1。 */
+  var B = C.core.perks.BALANCE;
 
   var W = 960, H = 600;
   var T = 18;                 // 外墙厚度
@@ -149,9 +172,15 @@
   }
 
   /* ---------- 敌人 ---------- */
-  function makeEnemy(spec, isBoss) {
+  var PATTERN_TOKEN = { ranged: 'violet', charge: 'amber' };
+
+  /* T24-D：按 pattern（或房间 color_token）产出 enemy.colorToken 供视觉层取色；
+   * enemy.color 保留 v1 计算作为兼容回退，geometry 下视觉等价。 */
+  function makeEnemy(spec, isBoss, roomToken) {
     var p = spawnPoint();
     var r = isBoss ? 34 : ENEMY_R;
+    var fallbackToken = (typeof roomToken === 'string' && roomToken) ? roomToken : 'teal';
+    var token = isBoss ? 'rust' : (PATTERN_TOKEN[spec.pattern] || fallbackToken);
     return {
       x: p.x, y: p.y, vx: 0, vy: 0, r: r,
       hp: spec.hp, maxHp: spec.hp, damage: spec.damage,
@@ -159,15 +188,34 @@
       shape: isBoss ? 'boss' : spec.pattern,
       timer: rand(0.4, 1.4), mode: 'idle', angle: rand(0, Math.PI * 2),
       lockX: 0, lockY: 0, flash: 0, touchCd: 0,
-      color: isBoss ? '#D9644B' : (spec.pattern === 'ranged' ? '#8E7CE8' : spec.pattern === 'charge' ? '#E9A23B' : '#39C6A5')
+      color: isBoss ? '#D9644B' : (spec.pattern === 'ranged' ? '#8E7CE8' : spec.pattern === 'charge' ? '#E9A23B' : '#39C6A5'),
+      colorToken: token
     };
+  }
+
+  /* T24-C 节奏校准：按房间进度温和放大 hp / 数量，elite 再叠词缀。
+   * 只作用于运行时实例，绝不回写关卡 JSON（关卡不含数值）。 */
+  function calibrate(spec, roomIndex, roomCount, roomType) {
+    var prog = roomCount > 1 ? roomIndex / (roomCount - 1) : 0;
+    var hp = Math.round(spec.hp * (B.hpBase + B.hpProgress * prog));
+    var damage = spec.damage;
+    var count = spec.count + (prog > B.countAfter ? B.countBonus : 0);
+    if (roomType === 'elite') {
+      hp = Math.round(hp * B.eliteHpMul);
+      damage += B.eliteDamage;
+      count += B.eliteCount;
+    }
+    return { hp: hp, damage: damage, count: count, pattern: spec.pattern, type: spec.type };
   }
 
   function enterRoom(i) {
     var s = state;
     var room = s.run.rooms[i];
+    var roomType = room.type || 'normal';        /* C6：缺省 normal → 行为等同 M1 */
     s.roomIndex = i;
     s.room = room;
+    s.roomType = roomType;                       /* C5 */
+    s.bossPhase = 1;                             /* C5 */
     s.walls = buildWalls(room.shape);
     s.enemies = [];
     s.bullets = [];
@@ -178,18 +226,37 @@
     s.player.y = H / 2;
     s.player.vx = s.player.vy = 0;
     room.enemies.forEach(function (spec) {
-      for (var k = 0; k < spec.count; k++) s.enemies.push(makeEnemy(spec, false));
+      var c = calibrate(spec, i, s.run.rooms.length, roomType);
+      var shaped = { hp: c.hp, damage: c.damage, pattern: spec.pattern, type: spec.type };
+      for (var k = 0; k < c.count; k++) s.enemies.push(makeEnemy(shaped, false, room.color_token));
     });
+    /* T24-B 房间分型：rest 回血 / event 自动奖励（风险选择简化）/ elite 词缀已在 calibrate */
+    if (roomType === 'rest') {
+      var heal = Math.min(B.restHeal, s.player.maxHp - s.player.hp);
+      s.player.hp += heal;
+      emit(s, 'roomEvent', { kind: 'rest', healed: heal });
+    } else if (roomType === 'event') {
+      s.gold += B.eventGold;
+      emit(s, 'roomEvent', { kind: 'event', gold: B.eventGold });
+    }
     s.transition = 0.45;
-    emit(s, 'roomEnter', { index: i, room: room, total: s.run.rooms.length });
+    emit(s, 'roomEnter', { index: i, room: room, roomType: roomType, total: s.run.rooms.length });
   }
 
   function enterBoss() {
     var s = state;
     s.roomIndex = s.run.rooms.length;
     s.room = { name: '终室', shape: 'arena', color_token: 'rust', path_hint: '观察蓄力方向，侧身闪避后反击' };
+    s.roomType = 'normal';
+    s.bossPhase = 1;                              /* C5：Boss 两阶段 */
     s.walls = buildWalls('arena');
-    s.enemies = [makeEnemy(s.run.boss, true)];
+    var bossSpec = {
+      hp: Math.round(s.run.boss.hp * B.bossHpMul),  /* T24-C：Boss hp 增长曲线 */
+      damage: s.run.boss.damage,
+      pattern: s.run.boss.pattern,
+      type: s.run.boss.name
+    };
+    s.enemies = [makeEnemy(bossSpec, true, s.room.color_token)];
     s.bullets = [];
     s.enemyBullets = [];
     s.exitActive = false;
@@ -198,7 +265,7 @@
     s.player.vx = s.player.vy = 0;
     s.transition = 0.55;
     A('boss');
-    emit(s, 'bossEnter', { boss: s.run.boss });
+    emit(s, 'bossEnter', { boss: s.run.boss, phase: 1 });
   }
 
   /* ---------- 状态创建 ---------- */
@@ -216,6 +283,14 @@
         invuln: 0, dashCd: 0, dashTime: 0, dashX: 1, dashY: 0, fireCd: 0
       },
       kills: 0, gold: 0, elapsed: 0,
+      /* T24-B / C5：新增字段全部可选，缺省时代码用 || 兜底走 M1 路径 */
+      damagePops: [],          /* C5 [{x,y,value,crit,life,max}] */
+      combo: 0,               /* C5 连击数 */
+      roomType: 'normal',     /* C5 normal|elite|event|rest */
+      bossPhase: 1,           /* C5 1|2 */
+      comboTimer: 0,          /* 内部：>1.5s 未命中清零 */
+      pickCount: 0,           /* 内部：已选词条次数，驱动三选一 */
+      dashTrailCd: 0, satAngle: 0, satellites: [],  /* 内部：协同/卫星状态 */
       onEvent: null
     };
     (unlocked || []).forEach(function (id) { C.core.perks.add(s, id); });
@@ -259,6 +334,29 @@
     A('hit');
     s.hitstop = crit ? 0.055 : 0.028;
     s.shake = Math.max(s.shake, crit ? 7 : 3.5);
+    /* C5 伤害飘字：engine 产出、render 只读；每帧由 update 衰减 life */
+    if (s.damagePops) {
+      s.damagePops.push({
+        x: e.x, y: e.y - e.r, value: Math.round(dmg), crit: !!crit,
+        life: B.popLife, max: B.popLife
+      });
+    }
+    /* T24-B Boss 两阶段：hp 跌破 50% 且仍存活 → 切 P2（弹幕/移速在 AI 处变化） */
+    if (e.isBoss && (s.bossPhase || 1) === 1 && e.hp > 0 && e.hp <= e.maxHp * B.bossPhase2At) {
+      s.bossPhase = 2;
+      s.shake = Math.max(s.shake, 18);
+      burst(s, e.x, e.y, '#E9A23B', 26, 300);
+      A('boss');
+      /* 阶段切换瞬间发一圈环形弹幕，给出明显的阶段变化（visual-dev 读 state.bossPhase） */
+      for (var q = 0; q < 8; q++) {
+        var pa = q * Math.PI / 4;
+        s.enemyBullets.push({
+          x: e.x, y: e.y, vx: Math.cos(pa) * 275, vy: Math.sin(pa) * 275,
+          damage: e.damage, life: 2.6, r: 6
+        });
+      }
+      emit(s, 'bossPhase', { phase: 2, boss: e });
+    }
     if (e.hp <= 0) {
       e.dead = true;
       s.kills += 1;
@@ -266,11 +364,25 @@
       burst(s, e.x, e.y, e.color, 16, 260);
       A('kill');
       var payload = C.core.perks.on(s, 'kill', { chainChance: 0, x: e.x, y: e.y });
-      if (!chainDepth && Math.random() < payload.chainChance) {
-        s.enemies.forEach(function (o) {
-          if (o !== e && !o.dead && dist(o, e) < 130) damageEnemy(s, o, 8, false, 1);
-        });
-        burst(s, e.x, e.y, '#8E7CE8', 12, 220);
+      if (!chainDepth) {
+        /* 连锁：概率/范围/伤害全由 perks 提供；缺省回退 v1 的 130 / 8 */
+        if (Math.random() < payload.chainChance) {
+          var cr = payload.chainRadius || 130;
+          var cd = payload.chainDamage || 8;
+          var nextDepth = payload.chainInfinite ? 0 : 1;
+          s.enemies.forEach(function (o) {
+            if (o !== e && !o.dead && dist(o, e) < cr) damageEnemy(s, o, cd, false, nextDepth);
+          });
+          burst(s, e.x, e.y, '#8E7CE8', 12, 220);
+        }
+        /* 击杀爆裂：伤害只作用一次（chainDepth=1 阻断递归爆裂） */
+        if (payload.explodeDamage > 0) {
+          var er = payload.fullscreenNova ? W * 2 : (payload.explodeRadius || 70);
+          s.enemies.forEach(function (o) {
+            if (o !== e && !o.dead && dist(o, e) < er) damageEnemy(s, o, payload.explodeDamage, false, 1);
+          });
+          burst(s, e.x, e.y, '#E9A23B', payload.fullscreenNova ? 40 : 14, 260);
+        }
       }
       if (e.isBoss) s.shake = 16;
     }
@@ -322,17 +434,31 @@
     var want = (s.room && s.room.perk_choices) || [];
     var pool = C.core.perks.IDS.filter(function (id) { return C.core.perks.canOffer(s, id); });
     var chosen = want.filter(function (id) { return pool.indexOf(id) !== -1; });
+    /* T24-A：每 3 次选择插入一次「稀有/史诗三选一」，默认仍为二选一。
+     * pickCount=已选次数；第 3/6/9 次对应 nth=(pickCount+1) 且 nth%3===0。
+     * 返回数组长度可为 2 或 3（screens.js 由 ui-dev 适配）。 */
+    var nth = (s.pickCount || 0) + 1;
+    var special = nth % 3 === 0;
+    var target = special ? 3 : 2;
+    var fill = pool.slice();
+    if (special) {
+      var rank = C.core.perks.RARITY_RANK;
+      fill.sort(function (a, b) {
+        return (rank[C.core.perks.TABLE[b].rarity] || 0) - (rank[C.core.perks.TABLE[a].rarity] || 0);
+      });
+    }
     var i = 0;
-    while (chosen.length < 2 && i < pool.length) {
-      if (chosen.indexOf(pool[i]) === -1) chosen.push(pool[i]);
+    while (chosen.length < target && i < fill.length) {
+      if (chosen.indexOf(fill[i]) === -1) chosen.push(fill[i]);
       i++;
     }
-    return chosen.slice(0, 2);
+    return chosen.slice(0, target);
   }
   function choosePerk(id) {
     var s = state;
     if (!s || s.phase !== 'perk') return false;
     if (!C.core.perks.add(s, id)) return false;
+    s.pickCount = (s.pickCount || 0) + 1;      /* 驱动三选一节奏 */
     A('pick');
     emit(s, 'perkPicked', { id: id, def: C.core.perks.TABLE[id] });
     s.phase = 'transition';
@@ -358,6 +484,15 @@
       return p.life > 0;
     });
     s.trail = s.trail.filter(function (p) { p.life -= dt; return p.life > 0; });
+    /* C5 伤害飘字：engine 每帧衰减 life，render 只读 */
+    if (s.damagePops) {
+      s.damagePops = s.damagePops.filter(function (q) { q.life -= dt; return q.life > 0; });
+    }
+    /* C5 连击：超过 1.5s 未命中清零（缺省字段时整段跳过，行为等同 M1） */
+    if (s.combo || s.comboTimer) {
+      s.comboTimer = (s.comboTimer || 0) - dt;
+      if (s.comboTimer <= 0) { s.combo = 0; s.comboTimer = 0; }
+    }
 
     if (s.phase === 'dead' || s.phase === 'won' || s.phase === 'perk') return s;
 
@@ -390,6 +525,28 @@
       p.vx = p.dashX * DASH_SPEED;
       p.vy = p.dashY * DASH_SPEED;
       s.trail.push({ x: p.x, y: p.y, life: 0.24, max: 0.24 });
+      /* T24-B 掠影冲刺伤害 + 协同「疾步 + 爆裂」冲刺爆炸轨迹 */
+      var dd = C.core.perks.on(s, 'dash', {});
+      if (dd.dashDamage > 0) {
+        s.enemies.forEach(function (e) {
+          e.dashCd = e.dashCd || 0;
+          if (!e.dead && e.dashCd <= 0 && dist(e, p) < e.r + p.r + 6) {
+            e.dashCd = B.dashHitCd;
+            damageEnemy(s, e, dd.dashDamage, false, 1);
+          }
+        });
+      }
+      if (dd.dashTrail) {
+        s.dashTrailCd = (s.dashTrailCd || 0) - dt;
+        if (s.dashTrailCd <= 0) {
+          s.dashTrailCd = B.dashTrailCd;
+          var tr = Math.round((dd.explodeDamage || 8) * B.dashTrailMul);
+          s.enemies.forEach(function (o) {
+            if (!o.dead && dist(o, p) < (dd.explodeRadius || 70)) damageEnemy(s, o, tr, false, 1);
+          });
+          burst(s, p.x, p.y, '#E9A23B', 8, 180);
+        }
+      }
     } else {
       var k = Math.min(1, dt * 13);
       p.vx += (ax * SPEED - p.vx) * k;
@@ -405,12 +562,19 @@
     }
     if (input.fire && p.fireCd <= 0) {
       var atk = C.core.perks.on(s, 'attack', { damage: BULLET_DMG, range: BULLET_RANGE, crit: false });
-      var ca = Math.cos(p.angle), sa = Math.sin(p.angle);
-      s.bullets.push({
-        x: p.x + ca * (p.r + 8), y: p.y + sa * (p.r + 8),
-        vx: ca * BULLET_SPEED, vy: sa * BULLET_SPEED,
-        damage: atk.damage, life: atk.range / BULLET_SPEED, crit: atk.crit
-      });
+      /* T24-B 多重射击：shots=1 时与 v1 完全一致；pierce/hit 为可选子弹字段 */
+      var shots = 1 + (atk.multishot || 0);
+      var spread = atk.spread || 0;
+      for (var m = 0; m < shots; m++) {
+        var ang = p.angle + (m - (shots - 1) / 2) * spread;
+        var ca = Math.cos(ang), sa = Math.sin(ang);
+        s.bullets.push({
+          x: p.x + ca * (p.r + 8), y: p.y + sa * (p.r + 8),
+          vx: ca * BULLET_SPEED, vy: sa * BULLET_SPEED,
+          damage: atk.damage, life: atk.range / BULLET_SPEED, crit: atk.crit,
+          pierce: atk.pierce || 0, hit: []
+        });
+      }
       p.fireCd = FIRE_CD;
       A('shoot');
     }
@@ -422,11 +586,22 @@
         burst(s, b.x, b.y, '#39C6A5', 3, 80);
         return false;
       }
+      var hitList = b.hit || (b.hit = []);
       for (var i = 0; i < s.enemies.length; i++) {
         var e = s.enemies[i];
-        if (!e.dead && dist(b, e) < e.r + 5) {
+        if (!e.dead && hitList.indexOf(e) === -1 && dist(b, e) < e.r + 5) {
           var mult = (e.isBoss && s.run.boss.weakness_perk && s.perks[s.run.boss.weakness_perk]) ? 1.35 : 1;
           damageEnemy(s, e, Math.round(b.damage * mult), b.crit, 0);
+          /* C5 连击：仅玩家子弹命中累积，刷新 1.5s 窗口 */
+          s.combo = (s.combo || 0) + 1;
+          s.comboTimer = B.comboWindow;
+          /* T24-B 吸血 / 霜击钩子 */
+          var hk = C.core.perks.on(s, 'hit', { x: e.x, y: e.y });
+          if (hk.lifesteal) s.player.hp = Math.min(s.player.maxHp, s.player.hp + hk.lifesteal);
+          if (hk.frost) { e.slowTime = hk.frost.time; e.slowFactor = hk.frost.factor; }
+          hitList.push(e);
+          /* 贯穿：仍有穿透次数则继续飞（可同帧命中后续敌人），否则子弹消失 */
+          if (b.pierce > 0) { b.pierce -= 1; continue; }
           return false;
         }
       }
@@ -435,15 +610,23 @@
 
     /* 敌人 AI */
     var speedMul = d.enemySpeed;
+    var inBossP2 = (s.bossPhase || 1) === 2;
     s.enemies.forEach(function (e) {
       if (e.dead) return;
       e.flash = Math.max(0, e.flash - dt);
       e.touchCd = Math.max(0, e.touchCd - dt);
+      e.dashCd = Math.max(0, (e.dashCd || 0) - dt);   /* 掠影命中冷却 */
+      e.satCd = Math.max(0, (e.satCd || 0) - dt);     /* 卫星命中冷却 */
+      e.slowTime = Math.max(0, (e.slowTime || 0) - dt); /* 霜击减速剩余 */
       e.timer -= dt;
       var toX = p.x - e.x, toY = p.y - e.y;
       var len = Math.hypot(toX, toY) || 1;
       var nx = toX / len, ny = toY / len;
       var sp = (e.isBoss ? 96 : 118) * speedMul;
+      /* T24-B 寒域光环 / 霜击 / Boss P2 提速 */
+      if (d.slowAuraRadius > 0 && dist(e, p) < d.slowAuraRadius) sp *= d.slowAuraFactor;
+      if (e.slowTime > 0) sp *= (e.slowFactor || 1);
+      if (e.isBoss && inBossP2) sp *= B.bossPhase2Speed;
 
       if (e.pattern === 'chase') {
         e.vx = nx * sp; e.vy = ny * sp;
@@ -467,14 +650,16 @@
         e.vx = nx * sp * 0.7 * pull + Math.sin(e.angle += dt * 1.3) * 18;
         e.vy = ny * sp * 0.7 * pull + Math.cos(e.angle) * 18;
         if (e.timer <= 0) {
-          e.timer = e.isBoss ? 1.15 : rand(1.4, 2.1);
+          e.timer = e.isBoss ? (inBossP2 ? B.bossPhase2Cd : 1.15) : rand(1.4, 2.1);
           var bl = Math.hypot(toX, toY) || 1;
           s.enemyBullets.push({
             x: e.x, y: e.y, vx: (toX / bl) * 275, vy: (toY / bl) * 275,
             damage: e.damage, life: 2.6, r: 6
           });
           if (e.isBoss) {
-            [-0.28, 0.28].forEach(function (off) {
+            /* T24-B Boss P2：弹幕加密（更短间隔 + 更多散射角） */
+            var offs = inBossP2 ? [-0.55, -0.28, 0.28, 0.55] : [-0.28, 0.28];
+            offs.forEach(function (off) {
               var a = Math.atan2(toY, toX) + off;
               s.enemyBullets.push({ x: e.x, y: e.y, vx: Math.cos(a) * 275, vy: Math.sin(a) * 275, damage: e.damage, life: 2.6, r: 6 });
             });
@@ -484,6 +669,10 @@
         e.vx = 0; e.vy = 0;
       }
 
+      /* T24-B 协同「卫轮 + 寒域 / 涡心」：卫星范围内敌人被向心吸附 */
+      if (d.synergy.vortexPull && d.satellites > 0 && len < d.satelliteRadius * 2) {
+        e.vx += nx * sp; e.vy += ny * sp;
+      }
       e.x += e.vx * dt; e.y += e.vy * dt;
       collideWalls(e, e.r);
       if (dist(e, p) < e.r + p.r && e.touchCd <= 0) {
@@ -491,6 +680,28 @@
         hurtPlayer(s, e, e.damage);
       }
     });
+
+    /* T24-B 环绕卫星：位置写入 state.satellites（视觉层可选读取），撞击造成伤害 */
+    if (d.satellites > 0) {
+      s.satAngle = (s.satAngle || 0) + dt * d.satelliteSpeed;
+      var sats = s.satellites || (s.satellites = []);
+      sats.length = d.satellites;
+      for (var k = 0; k < d.satellites; k++) {
+        var sang = s.satAngle + k * (Math.PI * 2 / d.satellites);
+        var sx = p.x + Math.cos(sang) * d.satelliteRadius;
+        var sy = p.y + Math.sin(sang) * d.satelliteRadius;
+        sats[k] = { x: sx, y: sy };
+        s.enemies.forEach(function (e) {
+          e.satCd = e.satCd || 0;
+          if (!e.dead && e.satCd <= 0 && dist({ x: sx, y: sy }, e) < e.r + 8) {
+            e.satCd = B.satHitCd;
+            damageEnemy(s, e, d.satelliteDmg, false, 1);
+          }
+        });
+      }
+    } else if (s.satellites) {
+      s.satellites = [];
+    }
 
     /* 敌方子弹 */
     s.enemyBullets = s.enemyBullets.filter(function (b) {

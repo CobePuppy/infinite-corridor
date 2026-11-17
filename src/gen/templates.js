@@ -1,6 +1,13 @@
-/* gen/templates.js — 3 套结构不同的降级模板（3 / 4 / 5 房间各一套）
- * 按 hash(seed) 轮换，保证连续失败三局也不会一模一样。
+/* gen/templates.js — 6 套结构不同的降级模板（3 / 4 / 5 / 6 / 7 / 8 房间各一套）
+ * 按 hash(seed) 轮换，保证连续失败多局也不会一模一样。
  * 模板内只放结构；数值会由 reseed() 按 difficulty / last_run 重算。
+ *
+ * T25-B：前 3 套（3/4/5 房）对象与 reseed() 逻辑一字未动，geometry 下输出与 M1 完全一致（C1）。
+ * 追加 3 套（6/7/8 房）：rooms 数不同，shape / pattern / perk_choices 组合彼此不同，
+ * 并使用可选 room.type 枚举（normal/elite/event/rest），缺省（前 3 套）等同 normal（C3/C6）。
+ * reseed() 对房间数天然长度无关：threat 单调修复 / difficulty bump / last_run 自适应 /
+ * color_token 轮换 / summary 轮换 / 名称按 geometry 索引重映射，均逐房或按数组长度遍历，
+ * 8 房下不越界、不产生非法值，故无需改动即适配 3–8 房。
  */
 (function (C) {
   'use strict';
@@ -86,6 +93,126 @@
       boss: { name: '闭域', hp: 300, damage: 18, pattern: 'ranged', weakness_perk: 'p_shield' },
       reward_perk_pool: ['p_shield', 'p_greed', 'p_chain', 'p_crit', 'p_slow'],
       summary: '边界收拢，色彩退去，只剩路径仍然成立。'
+    },
+    {
+      run_id: 'run_tpl_d', theme: 'geometry', difficulty: 1,
+      rooms: [
+        { index: 0, name: '折廊', shape: 'corridor', color_token: 'ink',    threat: 1, type: 'normal',
+          enemies: [{ type: 'e_block', count: 2, hp: 18, damage: 2, pattern: 'static' }],
+          perk_choices: ['p_dash', 'p_regen'],
+          path_hint: '静止块列不追击，沿直廊空隙一路穿过即可' },
+        { index: 1, name: '交集', shape: 'cross',    color_token: 'teal',   threat: 2, type: 'event',
+          enemies: [{ type: 'e_ranged', count: 2, hp: 26, damage: 3, pattern: 'ranged' }],
+          perk_choices: ['p_range', 'p_hp'],
+          path_hint: '十字口用掩体挡住弹道，侧身逐段通过' },
+        { index: 2, name: '折廊', shape: 'corridor', color_token: 'amber',  threat: 2, type: 'normal',
+          enemies: [{ type: 'e_orbit', count: 2, hp: 34, damage: 4, pattern: 'orbit' },
+                    { type: 'e_block', count: 1, hp: 30, damage: 4, pattern: 'static' }],
+          perk_choices: ['p_thorn', 'p_slow'],
+          path_hint: '贴墙推进让环绕者扑空，静止块留作临时掩体' },
+        { index: 3, name: '环室', shape: 'chamber',  color_token: 'violet', threat: 3, type: 'rest',
+          enemies: [{ type: 'e_ranged', count: 3, hp: 42, damage: 5, pattern: 'ranged' }],
+          perk_choices: ['p_regen', 'p_shield'],
+          path_hint: '沿环形外圈走位，回复类词条在此房用完再推进' },
+        { index: 4, name: '方庭', shape: 'arena',    color_token: 'rust',   threat: 3, type: 'elite',
+          enemies: [{ type: 'e_charge', count: 2, hp: 50, damage: 7, pattern: 'charge' },
+                    { type: 'e_ranged', count: 2, hp: 46, damage: 6, pattern: 'ranged' }],
+          perk_choices: ['p_crit', 'p_chain'],
+          path_hint: '等冲锋落空再进场，远程优先用走位拉开距离' },
+        { index: 5, name: '交集', shape: 'cross',    color_token: 'teal',   threat: 4, type: 'elite',
+          enemies: [{ type: 'e_charge', count: 2, hp: 58, damage: 8, pattern: 'charge' },
+                    { type: 'e_orbit', count: 2, hp: 54, damage: 8, pattern: 'orbit' }],
+          perk_choices: ['p_slow', 'p_greed'],
+          path_hint: '先清十字口的远程，再沿单向通道引诱冲锋逐个击破' }
+      ],
+      boss: { name: '合点', hp: 240, damage: 12, pattern: 'ranged', weakness_perk: 'p_range' },
+      reward_perk_pool: ['p_range', 'p_hp', 'p_thorn', 'p_slow'],
+      summary: '对称的回廊层层折返，路径在每一次转角处重新成立。'
+    },
+    {
+      run_id: 'run_tpl_e', theme: 'geometry', difficulty: 1,
+      rooms: [
+        { index: 0, name: '方庭', shape: 'arena',    color_token: 'ink',    threat: 1, type: 'normal',
+          enemies: [{ type: 'e_dot', count: 3, hp: 16, damage: 2, pattern: 'chase' }],
+          perk_choices: ['p_hp', 'p_dash'],
+          path_hint: '绕外圈拉扯追击者，不需要任何词条也能走通' },
+        { index: 1, name: '环室', shape: 'chamber',  color_token: 'teal',   threat: 1, type: 'event',
+          enemies: [{ type: 'e_orbit', count: 2, hp: 24, damage: 3, pattern: 'orbit' }],
+          perk_choices: ['p_thorn', 'p_regen'],
+          path_hint: '沿环形外圈移动，环绕者始终够不到你' },
+        { index: 2, name: '方庭', shape: 'arena',    color_token: 'amber',  threat: 2, type: 'normal',
+          enemies: [{ type: 'e_dot', count: 4, hp: 32, damage: 4, pattern: 'chase' },
+                    { type: 'e_orbit', count: 1, hp: 30, damage: 4, pattern: 'orbit' }],
+          perk_choices: ['p_crit', 'p_range'],
+          path_hint: '保持移动分批拉开，冲刺留给被合围的瞬间' },
+        { index: 3, name: '隙间', shape: 'corridor', color_token: 'violet', threat: 2, type: 'rest',
+          enemies: [{ type: 'e_ranged', count: 3, hp: 40, damage: 5, pattern: 'ranged' }],
+          perk_choices: ['p_regen', 'p_shield'],
+          path_hint: '贴墙吃掩体挡住弹道，回复后再逐段推进' },
+        { index: 4, name: '环室', shape: 'chamber',  color_token: 'rust',   threat: 3, type: 'elite',
+          enemies: [{ type: 'e_charge', count: 2, hp: 48, damage: 6, pattern: 'charge' },
+                    { type: 'e_orbit', count: 2, hp: 46, damage: 6, pattern: 'orbit' }],
+          perk_choices: ['p_slow', 'p_chain'],
+          path_hint: '等冲锋落空再绕圈，环绕者用中央掩体隔断' },
+        { index: 5, name: '方庭', shape: 'arena',    color_token: 'teal',   threat: 4, type: 'elite',
+          enemies: [{ type: 'e_dot', count: 5, hp: 56, damage: 8, pattern: 'chase' },
+                    { type: 'e_ranged', count: 2, hp: 54, damage: 7, pattern: 'ranged' }],
+          perk_choices: ['p_crit', 'p_greed'],
+          path_hint: '绕外圈分批拉扯，优先解决站在边缘的远程' },
+        { index: 6, name: '交集', shape: 'cross',    color_token: 'amber',  threat: 5, type: 'elite',
+          enemies: [{ type: 'e_charge', count: 3, hp: 64, damage: 9, pattern: 'charge' },
+                    { type: 'e_orbit', count: 2, hp: 62, damage: 9, pattern: 'orbit' }],
+          perk_choices: ['p_slow', 'p_shield'],
+          path_hint: '先清十字口远程，再沿单向通道引诱冲锋落空' }
+      ],
+      boss: { name: '重线', hp: 260, damage: 14, pattern: 'orbit', weakness_perk: 'p_slow' },
+      reward_perk_pool: ['p_dash', 'p_crit', 'p_slow', 'p_chain', 'p_shield'],
+      summary: '环形试炼一圈圈收紧，追击与环绕交替着改写路径。'
+    },
+    {
+      run_id: 'run_tpl_f', theme: 'geometry', difficulty: 1,
+      rooms: [
+        { index: 0, name: '方庭', shape: 'arena',    color_token: 'ink',    threat: 1, type: 'normal',
+          enemies: [{ type: 'e_dot', count: 3, hp: 18, damage: 2, pattern: 'chase' }],
+          perk_choices: ['p_dash', 'p_hp'],
+          path_hint: '绕外圈避开追击，起步阶段无需任何词条' },
+        { index: 1, name: '折廊', shape: 'corridor', color_token: 'teal',   threat: 1, type: 'event',
+          enemies: [{ type: 'e_block', count: 2, hp: 24, damage: 2, pattern: 'static' }],
+          perk_choices: ['p_regen', 'p_thorn'],
+          path_hint: '静止障碍不追击，贴边从缺口直穿即可' },
+        { index: 2, name: '交集', shape: 'cross',    color_token: 'amber',  threat: 2, type: 'normal',
+          enemies: [{ type: 'e_orbit', count: 2, hp: 30, damage: 3, pattern: 'orbit' },
+                    { type: 'e_ranged', count: 1, hp: 28, damage: 3, pattern: 'ranged' }],
+          perk_choices: ['p_range', 'p_crit'],
+          path_hint: '十字口用掩体隔断弹道，等环绕者转开再穿行' },
+        { index: 3, name: '环室', shape: 'chamber',  color_token: 'violet', threat: 2, type: 'rest',
+          enemies: [{ type: 'e_ranged', count: 3, hp: 36, damage: 4, pattern: 'ranged' }],
+          perk_choices: ['p_regen', 'p_shield'],
+          path_hint: '沿环形外圈走位吃掩体，回复后再推进下一间' },
+        { index: 4, name: '方庭', shape: 'arena',    color_token: 'rust',   threat: 3, type: 'elite',
+          enemies: [{ type: 'e_charge', count: 2, hp: 44, damage: 5, pattern: 'charge' },
+                    { type: 'e_dot', count: 2, hp: 42, damage: 5, pattern: 'chase' }],
+          perk_choices: ['p_crit', 'p_chain'],
+          path_hint: '等冲锋落空再进场，追击者用走位分批拉开' },
+        { index: 5, name: '折廊', shape: 'corridor', color_token: 'ink',    threat: 3, type: 'elite',
+          enemies: [{ type: 'e_ranged', count: 4, hp: 52, damage: 7, pattern: 'ranged' },
+                    { type: 'e_block', count: 2, hp: 50, damage: 6, pattern: 'static' }],
+          perk_choices: ['p_slow', 'p_range'],
+          path_hint: '贴墙吃掩体逐段推进，不要同时暴露在两条弹道上' },
+        { index: 6, name: '交集', shape: 'cross',    color_token: 'teal',   threat: 4, type: 'elite',
+          enemies: [{ type: 'e_charge', count: 3, hp: 60, damage: 9, pattern: 'charge' },
+                    { type: 'e_orbit', count: 2, hp: 58, damage: 8, pattern: 'orbit' }],
+          perk_choices: ['p_slow', 'p_shield'],
+          path_hint: '先清十字口的远程，再沿单向通道引诱冲锋落空' },
+        { index: 7, name: '隙间', shape: 'corridor', color_token: 'amber',  threat: 5, type: 'elite',
+          enemies: [{ type: 'e_ranged', count: 4, hp: 68, damage: 11, pattern: 'ranged' },
+                    { type: 'e_charge', count: 2, hp: 70, damage: 10, pattern: 'charge' }],
+          perk_choices: ['p_greed', 'p_chain'],
+          path_hint: '贴墙逐段推进，两条弹道之间留一个掩体再走' }
+      ],
+      boss: { name: '闭域', hp: 230, damage: 16, pattern: 'charge', weakness_perk: 'p_shield' },
+      reward_perk_pool: ['p_dash', 'p_hp', 'p_regen', 'p_crit', 'p_slow', 'p_shield'],
+      summary: '长廊一路收拢到尽头，色彩退去，只剩路径仍然成立。'
     }
   ];
 
