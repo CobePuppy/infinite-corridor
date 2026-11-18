@@ -8,9 +8,6 @@
 </head>
 <body>
 <div id="app">
-  <div class="stage">
-    <canvas id="game" width="960" height="600"></canvas>
-
     <div id="hud" class="hud hidden">
       <div class="hud-left">
         <div class="brand-mini">∞ 回廊</div>
@@ -20,6 +17,7 @@
       </div>
       <div class="hud-mid">
         <div class="hp-row"><span class="hp-label">生命</span><div class="hp-track"><div id="hp-fill" class="hp-fill"></div></div><span id="hp-text" class="hp-text">100 / 100</span></div>
+        <div class="dash-status"><span>冲刺</span> <b id="dash-status">可用</b></div>
         <div id="boss-bar" class="boss-bar hidden"><span id="boss-name">合点</span><div class="boss-track"><div id="boss-fill" class="boss-fill"></div></div></div>
         <div id="hud-boss-phase" class="hud-extra hidden"></div>
         <div id="hud-combo" class="hud-extra hidden"></div>
@@ -28,10 +26,15 @@
       <div class="hud-right">
         <div class="hud-stats"><span id="run-gold">金币 <b id="gold">0</b></span><span>用时 <b id="timer">0.0s</b></span><span class="src" id="source">离线模板</span></div>
         <div id="perk-chips" class="chips"></div>
-        <button id="btn-mute" class="mini-btn" type="button">音效 开</button>
+        <div class="hud-actions">
+          <button id="btn-pause" class="mini-btn" type="button" aria-keyshortcuts="Escape">暂停</button>
+          <button id="btn-mute" class="mini-btn" type="button">音效 开</button>
+        </div>
       </div>
     </div>
 
+  <div class="stage">
+    <canvas id="game" width="960" height="600" tabindex="-1" aria-label="回廊战斗区域"></canvas>
     <div id="toast" class="toast"></div>
 
     <div id="overlay" class="overlay">

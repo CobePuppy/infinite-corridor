@@ -633,16 +633,13 @@
       rr(ctx, -e.r, -e.r, e.r * 2, e.r * 2, 3); ctx.fill();
       ctx.globalAlpha = 0.35;
       rr(ctx, -e.r - 5, -e.r - 5, e.r * 2 + 10, e.r * 2 + 10, 4); ctx.stroke();
-    } else if (e.turret) {
+    } else if (e.shape === 'static') {
       ctx.fillStyle = shade(color, -0.45);
       polygon(ctx, 0, 0, e.r + 5, 6, Math.PI / 6); ctx.fill();
       ctx.stroke();
       ctx.rotate(e.angle);
       ctx.fillStyle = e.timer < 0.4 ? shade(CUR.col.crit, 0.45) : color;
       rr(ctx, -9, -7, e.r + 17, 14, 3); ctx.fill();
-    } else if (e.shape === 'static') {
-      polygon(ctx, 0, 0, e.r, 6, t * 0.25); ctx.fill();
-      ctx.globalAlpha = 0.3; polygon(ctx, 0, 0, e.r + 7, 6, t * 0.25); ctx.stroke();
     } else {
       polygon(ctx, 0, 0, e.r, 8, t * 0.35); ctx.fill();
       ctx.globalAlpha = 0.35; ctx.lineWidth = 2;

@@ -43,7 +43,7 @@ function makeEl(tag, id) {
   var el = {
     tagName: String(tag || 'div').toUpperCase(), id: id || '',
     dataset: {}, style: {}, children: [], _html: '', _text: '', _ev: {},
-    disabled: false, title: '',
+    disabled: false, title: '', scrollTop: 0,
     classList: {
       add: function (c) { cls[c] = true; },
       remove: function (c) { delete cls[c]; },
@@ -81,8 +81,12 @@ global.document = {
   querySelectorAll: function () { return []; },
   addEventListener: function () {}
 };
-global.requestAnimationFrame = function () { return 0; };  // 空转，主循环不跑，render.draw 不被调用
-global.addEventListener = function () {};
+var nextFrame;
+var windowEvents = {};
+global.requestAnimationFrame = function (callback) { nextFrame = callback; return 0; };
+global.addEventListener = function (type, listener) {
+  (windowEvents[type] = windowEvents[type] || []).push(listener);
+};
 global.removeEventListener = function () {};
 global.devicePixelRatio = 1;
 
@@ -104,6 +108,10 @@ function check(name, cond, extra) {
 function section(t) { console.log('\n' + t); }
 function read(f) { return fs.readFileSync(path.join(ROOT, f), 'utf8'); }
 function src(f) { return fs.readFileSync(path.join(SRC, f), 'utf8'); }
+function keydown(key, repeat) {
+  windowEvents.keydown.forEach(function (fn) { fn({ key: key, repeat: !!repeat,
+    target: byId('game'), preventDefault: function () {} }); });
+}
 
 (async function () {
 
@@ -194,124 +202,155 @@ function src(f) { return fs.readFileSync(path.join(SRC, f), 'utf8'); }
     '实际 ' + C.gen.templates.TEMPLATES.length);
   check('schema 房间数上限已扩到 8', /8/.test(src('gen/schema.js')));
 
-  /* ============ §A7  B 板块（2026-11-18 需求整理）回归断言 ============
-   * 覆盖 B1–B9：引擎层用真实 startRun/update 做行为验证，UI 层用 DOM stub
-   * 真实走 show/click 路径，静态契约用源码/HTML 文本核对。 */
+  /* ============ §A7  B1–B9 操作路径回归 ============ */
   section('§A7  B1–B9 回归断言');
-  var ejs = src('core/engine.js'), idx = read('index.html');
-  var noInput = { up: false, down: false, left: false, right: false,
-                  fire: false, dash: false, aimX: null, aimY: null };
-  var a7Themes = C.theme.readyIds();
-
-  /* B1：出生点不落墙 / 不落中心禁区 / 不与玩家贴脸（复刻 engine 的圆-矩判定） */
-  function wallHit(s, x, y, r) {
-    return s.walls.some(function (q) {
-      var nx = Math.max(q.x, Math.min(x, q.x + q.w));
-      var ny = Math.max(q.y, Math.min(y, q.y + q.h));
-      var dx = x - nx, dy = y - ny;
-      return dx * dx + dy * dy < r * r;
-    });
+  var noInput = {};
+  var originalBuild = C.gen.buildRun, originalRandom = Math.random, chamber;
+  try {
+    C.gen.buildRun = async function (input) {
+      var result = await originalBuild(input);
+      result.run.rooms[0].shape = 'chamber';
+      result.run.rooms[0].type = 'normal';
+      // (581, 393) 在墙圈内、不与墙重叠，且离中心超过 120，旧校验会放行。
+      var draw = 0;
+      Math.random = function () { return draw++ % 2 ? (393 - 70) / 460 : (581 - 403.2) / 422.4; };
+      return result;
+    };
+    chamber = await E.startRun({ theme: 'geometry', runIndex: 1 });
+  } finally {
+    C.gen.buildRun = originalBuild;
+    Math.random = originalRandom;
   }
-  var spawnBad = [], spawnChecked = 0;
-  for (var sr = 0; sr < 36; sr++) {
-    var ss = await E.startRun({ theme: a7Themes[sr % a7Themes.length], runIndex: 5000 + sr });
-    ss.enemies.forEach(function (e) {
-      spawnChecked++;
-      var dcx = e.x - E.W / 2, dcy = e.y - E.H / 2;
-      var dpx = e.x - ss.player.x, dpy = e.y - ss.player.y;
-      if (wallHit(ss, e.x, e.y, 15 + 6)) spawnBad.push('墙内');
-      else if (dcx * dcx + dcy * dcy < 120 * 120) spawnBad.push('中心');
-      else if (dpx * dpx + dpy * dpy < 170 * 170) spawnBad.push('贴脸');
-    });
+  var expectedEnemies = chamber.run.rooms[0].enemies.reduce(function (n, e) { return n + e.count; }, 0);
+  check('B1 强制抽到封闭内角时，仍足量刷在可到达的外圈',
+    chamber.enemies.length === expectedEnemies && chamber.enemies.every(function (e) {
+      var clear = !chamber.walls.some(function (wall) {
+        var x = Math.max(wall.x, Math.min(e.x, wall.x + wall.w));
+        var y = Math.max(wall.y, Math.min(e.y, wall.y + wall.h));
+        return Math.hypot(x - e.x, y - e.y) < e.r + 6;
+      });
+      return clear && (Math.abs(e.x - 480) >= 134 || Math.abs(e.y - 300) >= 134);
+    }));
+  var chaser = chamber.enemies[0];
+  Object.assign(chaser, { x: 685, y: 300, pattern: 'chase' });
+  chamber.enemies = [chaser];
+  for (var chaseFrame = 0; chaseFrame < 600 && chaser.x > 142; chaseFrame++) E.update(1 / 60, noInput);
+  check('B4 追击怪实际绕过环室外墙，到达玩家所在一侧', chaser.x <= 142,
+    '怪物终点 ' + chaser.x.toFixed(1) + ', ' + chaser.y.toFixed(1));
+
+  var dashEvents = 0;
+  var dashRun = await E.startRun({ theme: 'geometry', runIndex: 1,
+    onEvent: function (name) { if (name === 'dash') dashEvents++; } });
+  dashRun.enemies = [];
+  E.update(1 / 60, { right: true, dash: true });
+  var cdBefore = dashRun.player.dashCd;
+  dashRun.hitstop = 0.05;
+  for (var stopped = 0; stopped < 2; stopped++) E.update(1 / 60, noInput);
+  check('B2 第一次冲刺为 0.82 秒冷却，定格时继续走时',
+    Math.abs(cdBefore - 0.82) < 0.0001 && dashRun.player.dashCd < cdBefore && dashRun.hitstop > 0);
+  for (var frame = 0; frame < 50; frame++) E.update(1 / 60, noInput);
+  E.update(1 / 60, { right: true, dash: true });
+  check('B2 正常开局中松开 Shift 后，第二次冲刺实际发动',
+    dashEvents === 2 && dashRun.player.dashTime > 0);
+
+  var hitRun = await E.startRun({ theme: 'geometry', runIndex: 1 });
+  var turret = hitRun.enemies[0];
+  hitRun.enemies = [turret];
+  Object.assign(turret, { x: 500, y: 300, hp: 200, maxHp: 200, pattern: 'static', timer: 10 });
+  hitRun.walls = [];
+  function pellet(crit) {
+    hitRun.bullets.push({ x: turret.x, y: turret.y, vx: 0, vy: 0,
+      damage: 10, life: 1, crit: !!crit, pierce: 0, hit: [] });
   }
-  check('B1 出生点不落墙 / 不落中心 / 不贴脸（' + spawnChecked + ' 个样本）',
-    spawnChecked > 0 && spawnBad.length === 0, spawnBad.slice(0, 5).join(','));
-  check('B1 引擎统一 spawnValid() 校验，兜底坐标不再裸返回',
-    ejs.indexOf('function spawnValid(') !== -1 &&
-    ejs.indexOf('return { x: W * 0.72, y: H / 2 }') === -1);
-
-  /* B2：定格期间 dashCd 仍递减（此前 hitstop>0 直接 return，计时器全停摆） */
-  var sB2 = await E.startRun({ theme: 'geometry', runIndex: 5401 });
-  sB2.hitstop = 0.4;
-  sB2.player.dashCd = 0.5;
-  var cdBefore = sB2.player.dashCd;
-  for (var b2i = 0; b2i < 6; b2i++) E.update(1 / 60, noInput);
-  check('B2 定格期间冲刺 CD 照常递减（不再「全局只能用一次」）',
-    sB2.player.dashCd < cdBefore - 0.05 && sB2.hitstop > 0,
-    'dashCd ' + cdBefore.toFixed(2) + '→' + sB2.player.dashCd.toFixed(2));
-
-  /* B3：普通命中不再置 hitstop；暴击保留但封顶 */
-  var sB3 = await E.startRun({ theme: 'geometry', runIndex: 5402 });
-  function pushHitBullet(s, crit) {
-    var t = s.enemies[0];
-    if (t) { t.hp = t.maxHp = 200; }
-    s.player.fireCd = 1;
-    s.bullets.push({
-      x: t ? t.x : 500, y: t ? t.y : 300, vx: 0, vy: 0,
-      damage: 10, life: 1, crit: !!crit, pierce: 0, hit: []
-    });
-  }
-  sB3.hitstop = 0;
-  pushHitBullet(sB3, false);
+  for (var shot = 0; shot < 5; shot++) pellet(false);
   E.update(1 / 60, noInput);
-  check('B3 普通命中不再触发定格（此前每颗子弹 0.028s）',
-    sB3.hitstop <= 0, 'hitstop=' + sB3.hitstop);
-  sB3.hitstop = 0;
-  pushHitBullet(sB3, true);
+  check('B3 同帧五颗子弹分别扣血，只出一份反馈且普攻无震屏或定格',
+    turret.hp === 150 && hitRun.damagePops.length === 1 && hitRun.damagePops[0].value === 50 &&
+    hitRun.shake === 0 && hitRun.hitstop <= 0);
+  pellet(true);
   E.update(1 / 60, noInput);
-  check('B3 暴击定格保留但封顶 ≤0.05',
-    sB3.hitstop > 0 && sB3.hitstop <= 0.05, 'hitstop=' + sB3.hitstop);
+  check('B3 同批首次暴击只触发一次短定格',
+    hitRun.damagePops.length === 1 && hitRun.damagePops[0].crit && hitRun.hitstop > 0 && hitRun.hitstop <= 0.02);
+  turret.timer = 0;
+  for (var ready = 0; ready < 5; ready++) E.update(1 / 60, noInput);
+  check('B4 固定炮台朝玩家转动并发射，而不是只停在原地',
+    turret.x === 500 && Math.abs(Math.abs(turret.angle) - Math.PI) < 0.01 && hitRun.enemyBullets.length > 0);
 
-  /* B4：static 敌人周期性发弹，不再是站桩靶子 */
-  var sB4 = await E.startRun({ theme: 'geometry', runIndex: 5403 });
-  var ebBefore = sB4.enemyBullets.length;
-  sB4.enemies.forEach(function (e) { e.pattern = 'static'; e.timer = 0; });
-  E.update(1 / 60, noInput);
-  check('B4 static 敌人周期性发弹（不再呆在原地毫无威胁）',
-    sB4.enemyBullets.length > ebBefore,
-    '前 ' + ebBefore + ' / 后 ' + sB4.enemyBullets.length);
+  var hudRules = css.match(/\.hud\{([^}]+)\}/)[1];
+  check('B5 HUD 独立排在画布容器之前', html.indexOf('id="hud"') < html.indexOf('class="stage"') &&
+    !hudRules.includes('position:absolute'));
 
-  /* B5：顶部 HUD 半透明 + 不吃鼠标 */
-  check('B5 HUD 紧凑半透明且不阻挡画布瞄准',
-    css.indexOf('pointer-events:none') !== -1 &&
-    css.indexOf('background:linear-gradient(180deg,rgba(9,12,20,.62)') !== -1 &&
-    css.indexOf('padding:14px 20px 16px') === -1);
-
-  /* B6：解锁页顶部关闭按钮（真实点击路径） */
-  check('B6 解锁页顶部关闭按钮存在且与底部返回共用入口',
-    idx.indexOf('id="unlock-close"') !== -1 &&
-    src('ui/screens.js').indexOf("$('unlock-close').addEventListener('click', backFromUnlock)") !== -1);
   S.showUnlock(false);
-  check('B6 showUnlock 后 current() 为 unlock', S.current() === 'unlock');
+  byId('unlock-grid').scrollTop = 200;
   byId('unlock-close').click();
-  check('B6 点击顶部 × 关闭解锁页返回开始页', S.current() === 'start');
+  check('B6 从开始页打开解锁，滚动后顶部关闭回到开始页', S.current() === 'start');
+  S.show('end');
+  byId('btn-unlock').click();
+  check('B6 从结算页打开解锁，列表从顶部开始', byId('unlock-grid').scrollTop === 0 && S.current() === 'unlock');
+  byId('unlock-grid').scrollTop = 200;
+  keydown('Escape');
+  check('B6/B7 在解锁列表里按 Esc 回到原结算页', S.current() === 'end');
+  keydown('Escape');
+  check('B7 结算页 Esc 保持结算', S.current() === 'end');
 
-  /* B7：Esc 按弹窗分流，不叠加暂停 */
-  check('B7 Esc 按 unlock / pause / perk / start / end 分流',
-    mjs.indexOf("cur === 'unlock'") !== -1 && mjs.indexOf('screens.backFromUnlock()') !== -1 &&
-    mjs.indexOf("cur === 'pause'") !== -1 && mjs.indexOf("cur === 'perk'") !== -1 &&
-    mjs.indexOf('setPaused(!paused)') !== -1);
-  check('B7 screens.current() 已导出且反映当前弹窗',
-    typeof S.current === 'function' && (S.show('pause'), S.current() === 'pause'));
-  S.show(null);
-  check('B7 show(null) 后 current() 为 null（游戏中）', S.current() === null);
+  byId('btn-start').click();
+  await new Promise(function (resolve) { setTimeout(resolve, 0); });
+  var previousRun = E.getState();
+  var drawForFrames = C.ui.render.draw;
+  C.ui.render.draw = function () {};
+  try {
+    nextFrame(1000);
+    keydown('Escape');
+    var pauseTime = previousRun.elapsed;
+    keydown('Escape', true);
+    nextFrame(1050);
+    check('B7 实际 Esc 暂停、长按不会续跑，暂停时计时冻结',
+      S.current() === 'pause' && previousRun.elapsed === pauseTime);
+    keydown('Escape');
+    nextFrame(1100);
+    check('B7 再按 Esc 返回游戏并恢复计时',
+      S.current() === null && previousRun.elapsed > pauseTime);
 
-  /* B8：词条卡不再渲染英文函数 id */
-  S.showPerk(['p_nova', 'p_crit'], false);
-  var cardHtml = byId('perk-cards').children[0].innerHTML;
-  check('B8 词条卡不含 perk-id / 英文 id 文本',
-    cardHtml.indexOf('perk-id') === -1 && cardHtml.indexOf('p_nova') === -1);
-  check('B8 CSS 已移除 .perk-id 规则', css.indexOf('.perk-id{') === -1);
-  S.show(null);
+    keydown('Escape');
+    var finishBuild;
+    C.gen.buildRun = function (input) {
+      return new Promise(function (resolve) {
+        finishBuild = function () { originalBuild(input).then(resolve); };
+      });
+    };
+    try {
+      byId('btn-pause-restart').click();
+      var timeAtRestart = previousRun.elapsed;
+      keydown('Escape');
+      nextFrame(1150);
+      check('B7 重新加载时按 Esc 不会让旧局继续走帧',
+        S.current() === null && previousRun.elapsed === timeAtRestart);
+      finishBuild();
+      await new Promise(function (resolve) { setTimeout(resolve, 0); });
+    } finally {
+      C.gen.buildRun = originalBuild;
+    }
+    var freshRun = E.getState();
+    nextFrame(1200);
+    check('B9 暂停页实点重开，普通新局出现且实际解除暂停',
+      freshRun !== previousRun && freshRun.phase === 'playing' && S.current() === null && freshRun.elapsed > 0);
+    byId('btn-pause').click();
+    check('B9 HUD 暂停按钮同样能打开重开面板', S.current() === 'pause' && !byId('btn-pause-restart').disabled);
+    byId('btn-pause-home').click();
+  } finally {
+    C.ui.render.draw = drawForFrames;
+  }
 
-  /* B9：暂停面板三个出口 + begin() 重置 paused */
-  check('B9 暂停面板与 继续 / 重开本局 / 返回开始页 齐备',
-    idx.indexOf('id="screen-pause"') !== -1 && idx.indexOf('id="btn-resume"') !== -1 &&
-    idx.indexOf('id="btn-pause-restart"') !== -1 && idx.indexOf('id="btn-pause-home"') !== -1 &&
-    mjs.indexOf('onResume:') !== -1 && mjs.indexOf('onHome:') !== -1);
-  var beginBody = mjs.slice(mjs.indexOf('async function begin('), mjs.indexOf('function restart'));
-  check('B9 begin() 重建 state 后必定解除暂停（不残留暂停态）',
-    /await engine\.startRun[\s\S]*?paused = false;/.test(beginBody));
+  S.showPerk(['p_nova', 'p_crit', 'p_unknown_internal', '__proto__'], false);
+  var visibleCards = byId('perk-cards').children;
+  check('B8 词条卡只显示已注册的名字和说明，不泄露内部标识',
+    visibleCards.length === 2 && byId('perk-cards').dataset.count === '2' &&
+    !visibleCards.some(function (card) { return /perk-id|p_nova|p_crit|p_unknown_internal|__proto__/.test(card.innerHTML); }));
+  keydown('Escape');
+  check('B7 词条选择时 Esc 保持选项，不叠加暂停', S.current() === 'perk');
+  S.showPerk(['p_unknown_internal'], false);
+  byId('perk-cards').children[0].click();
+  check('B8 全部候选无效时可返回首页重开', S.current() === 'start');
 
   section('§A8 击飞接力和碰撞组合入口');
   for (var weapon of ['blade', 'cannon']) {

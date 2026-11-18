@@ -19,7 +19,15 @@
     var overlay = $('overlay');
     overlay.classList.toggle('hidden', !name);
     overlay.classList.toggle('dim', !!name && name !== 'perk');
+    overlay.classList.toggle('unlocking', name === 'unlock');
     $('hud').classList.toggle('hidden', name === 'start' || name === 'unlock');
+    $('btn-pause').disabled = !!name;
+    if (currentScreen !== name) {
+      var focusIds = { start: 'btn-start', pause: 'btn-resume', unlock: 'unlock-close', end: 'btn-restart' };
+      var focus = name === 'perk' ? $('perk-cards').querySelector('button:not(:disabled)') :
+        $(name ? focusIds[name] : 'game');
+      if (focus && focus.focus) focus.focus({ preventScroll: true });
+    }
     currentScreen = name || null;
   }
 
@@ -151,7 +159,7 @@
       var row = (synTable && typeof synTable === 'object') ? synTable[id] : null;
       if (row) partners = partners.concat(toIdList(row));
 
-      var matched = partners.filter(function (pid) { return owned.indexOf(pid) !== -1; });
+      var matched = partners.filter(function (pid) { return owned.indexOf(pid) !== -1 && TABLE[pid] && TABLE[pid].name; });
 
       // ③ 可选提示文本字段
       var note = textOf(def.synergyHint || def.synergyText || def.comboHint || def.comboNote ||
@@ -159,7 +167,7 @@
         (row && typeof row === 'object' ? row : null));
 
       if (matched.length) {
-        var names = matched.map(function (pid) { return (TABLE[pid] || {}).name || pid; });
+        var names = matched.map(function (pid) { return TABLE[pid].name; });
         return '协同 · 已持有「' + names.join('、') + '」' + (note ? ' · ' + note : '');
       }
       return ''; // 无协同关系 / 接口缺失 → 不渲染，避免刷屏
@@ -230,14 +238,22 @@
     start.insertBefore(wrap, actions);
   }
 
+  function perkDefinition(id) {
+    if (typeof id !== 'string') return null;
+    var perks = C.core.perks;
+    var tables = [perks.TABLE, perks.RECALL, perks.IMPACT];
+    var table = tables.find(function (entry) { return entry && Object.prototype.hasOwnProperty.call(entry, id); });
+    var def = table && table[id];
+    return def && typeof def.name === 'string' && def.name ? def : null;
+  }
+
   function perkCard(id, opts) {
     opts = opts || {};
-    var T = (C.core && C.core.perks && C.core.perks.TABLE) || {};
-    var RL = (C.core && C.core.perks && C.core.perks.RARITY_LABEL) || {};
-    /* logic-dev 可能新增词条但 TABLE 尚未同步 → 回退骨架，避免抛异常 */
+    var RL = C.core.perks.RARITY_LABEL;
     var impact = C.core.perks.IMPACT[id];
-    var def = T[id] || C.core.perks.RECALL[id] || impact || { id: id, name: id, desc: '', rarity: 'common', tag: '' };
-    var rarityLabel = impact ? '构筑点 ×1' : (RL[def.rarity] || def.rarity || '');
+    var def = perkDefinition(id);
+    if (!def) return null;
+    var rarityLabel = impact ? '构筑点 ×1' : (RL[def.rarity] || '');
     var d = document.createElement('button');
     d.className = 'perk-card ' + rarityClass(def.rarity) + (opts.locked ? ' locked' : '');
     d.type = 'button';
@@ -245,7 +261,7 @@
       '<div class="perk-top"><span class="perk-rarity">' + esc(rarityLabel) + '</span>' +
       '<span class="perk-tag">' + esc(def.tag || '') + '</span>' +
       mechanicBadge(def) + '</div>' +
-      '<div class="perk-name">' + esc(def.name || id) + '</div>' +
+      '<div class="perk-name">' + esc(def.name) + '</div>' +
       '<div class="perk-desc">' + esc(def.desc || '') + '</div>' +
       synergyBlock(opts.synergy) +
       (opts.footer || '');
@@ -257,9 +273,9 @@
   /* C8：候选数由 choices 决定，2 或 3（乃至其它数量）均动态生成，不写死 2 */
   function showPerk(choices, nextIsBoss, prototype, impact) {
     var box = $('perk-cards');
+    var list = Array.isArray(choices) ? choices.filter(perkDefinition) : [];
     if (box) {
       box.innerHTML = '';
-      var list = Array.isArray(choices) ? choices : [];  // 缺省/异常形态安全
       /* 供 visual-dev 的 CSS 按候选数布局（可选消费 [data-count]）；M1 下为 2，外观不变 */
       try { box.dataset.count = String(list.length); } catch (e) { /* 忽略 */ }
       var owned = ownedPerkIds();
@@ -268,7 +284,17 @@
       });
     }
     var st = (C.core && C.core.engine && C.core.engine.getState) ? (C.core.engine.getState() || {}) : {};
-    if (impact) {
+    if (!list.length) {
+      $('perk-room').textContent = '';
+      $('perk-title').textContent = '没有可用词条';
+      $('perk-sub').textContent = '请返回开始页重新进入回廊';
+      var home = document.createElement('button');
+      home.type = 'button';
+      home.className = 'btn primary';
+      home.textContent = '返回开始页';
+      home.addEventListener('click', function () { handlers.onHome && handlers.onHome(); });
+      if (box) box.appendChild(home);
+    } else if (impact) {
       $('perk-room').textContent = '第 1 组已清';
       $('perk-title').textContent = '强化' + C.core.impact.weapons[st.impact.weapon].name;
       $('perk-sub').textContent = '获得 1 个构筑点。选一项强化，迎战下一组。';
@@ -318,6 +344,9 @@
     $('hp-fill').style.width = (ratio * 100) + '%';
     $('hp-text').textContent = Math.max(0, Math.ceil(p.hp)) + ' / ' + p.maxHp;
     $('hp-fill').classList.toggle('low', ratio < 0.3);
+    var dash = $('dash-status');
+    dash.textContent = p.dashCd > 0 ? (Math.ceil(p.dashCd * 10) / 10).toFixed(1) + ' 秒' : '可用';
+    dash.classList.toggle('cooling', p.dashCd > 0);
 
     var total = impact ? 2 : s.run.rooms.length;
     var idx = impact ? impact.wave - 1 : Math.min(s.roomIndex, total);
@@ -345,7 +374,7 @@
     chips.innerHTML = '';
     var carried = impact && impact.perk ? [impact.perk] : (s.recallPerk ? [s.recallPerk] : Object.keys(s.perks));
     carried.forEach(function (id) {
-      var def = C.core.perks.TABLE[id] || C.core.perks.RECALL[id] || C.core.perks.IMPACT[id];
+      var def = perkDefinition(id);
       if (!def) return;
       var c = document.createElement('span');
       c.className = 'chip ' + rarityClass(def.rarity);
@@ -412,6 +441,7 @@
     var meta = C.core.engine.getMeta();
     $('unlock-gold').textContent = meta.gold;
     var box = $('unlock-grid');
+    var scrollTop = currentScreen === 'unlock' ? box.scrollTop : 0;
     box.innerHTML = '';
     C.core.perks.IDS.forEach(function (id) {
       var owned = meta.unlocked.indexOf(id) !== -1;
@@ -420,6 +450,7 @@
         noPick: true,
         footer: '<div class="perk-price">' + (owned ? '已解锁 · 开局自带' : '60 金币解锁') + '</div>'
       });
+      if (!card) return;
       if (!owned) {
         card.addEventListener('click', function () { handlers.onUnlock && handlers.onUnlock(id); });
         card.classList.toggle('poor', meta.gold < 60);
@@ -428,6 +459,7 @@
     });
     $('unlock-back').dataset.from = fromEnd ? 'end' : 'start';
     show('unlock');
+    box.scrollTop = scrollTop;
   }
 
   function setMuted(m) {
@@ -450,6 +482,7 @@
     $('btn-unlock-start').addEventListener('click', function () { showUnlock(false); });
     $('unlock-back').addEventListener('click', backFromUnlock);
     $('unlock-close').addEventListener('click', backFromUnlock);
+    $('btn-pause').addEventListener('click', function () { handlers.onPause && handlers.onPause(); });
     $('btn-mute').addEventListener('click', function () { handlers.onToggleMute && handlers.onToggleMute(); });
     /* B9：暂停面板三个出口，全部交给 main.js 编排 */
     $('btn-resume').addEventListener('click', function () { handlers.onResume && handlers.onResume(); });
