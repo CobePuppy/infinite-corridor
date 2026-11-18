@@ -3,7 +3,7 @@
  *
  * 作者：开发总监（T28 集成验收）
  * 定位：验证 T24–T28 五个并行会话汇合后的**跨层接线**与**4 分钟节奏**。
- *   §A 用轻量 DOM stub 在纯 Node 里按 index.html 顺序加载全部 11 个脚本，
+ *   §A 用轻量 DOM stub 在纯 Node 里按 index.html 顺序加载全部脚本，
  *      真实调用 screens / main 的事件与弹窗路径，证明「代码写了」等于「链路通了」。
  *   §A7 对 2026-11-18《项目修改需求整理》B 板块 B1–B9 做回归断言：引擎层用真实
  *      startRun/update 验证刷怪兜底、定格与计时器、站桩炮台；UI 层用 DOM stub 真实走
@@ -87,11 +87,10 @@ global.removeEventListener = function () {};
 global.devicePixelRatio = 1;
 
 /* ---------- 按 index.html 固定顺序加载全部脚本 ---------- */
-[
-  'core/perks.js', 'core/audio.js', 'core/engine.js', 'theme/index.js',
-  'gen/templates.js', 'gen/schema.js', 'gen/index.js',
-  'ui/render.js', 'ui/screens.js', 'ui/main.js'
-].forEach(function (f) { require(path.join(SRC, f)); });
+var html = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
+for (var script of html.matchAll(/<script src="([^"]+)"><\/script>/g)) {
+  require(path.join(ROOT, script[1]));
+}
 
 var C = global.Corridor;
 var P = C.core.perks, E = C.core.engine, S = C.ui.screens;
@@ -110,8 +109,8 @@ function src(f) { return fs.readFileSync(path.join(SRC, f), 'utf8'); }
 
   /* ============ §A 跨层接口契约 ============ */
   section('§A1  模块装载与词条三层');
-  check('11 个脚本按序加载无异常，四层均就绪',
-    !!(C.core && C.gen && C.theme && C.ui && C.ui.render && C.ui.screens));
+  check('入口脚本按序加载无异常，四层均就绪',
+    !!(C.core && C.core.recall && C.gen && C.theme && C.ui && C.ui.render && C.ui.screens));
   check('词条总数 = 24（10 数值冻结 + 10 机制 + 4 协同）', P.IDS.length === 24, '实际 ' + P.IDS.length);
   check('SYNERGIES / MECHANIC / synergyHint 三个 UI 接口均已导出',
     !!P.SYNERGIES && !!P.MECHANIC && typeof P.synergyHint === 'function');
@@ -310,7 +309,7 @@ function src(f) { return fs.readFileSync(path.join(SRC, f), 'utf8'); }
     idx.indexOf('id="screen-pause"') !== -1 && idx.indexOf('id="btn-resume"') !== -1 &&
     idx.indexOf('id="btn-pause-restart"') !== -1 && idx.indexOf('id="btn-pause-home"') !== -1 &&
     mjs.indexOf('onResume:') !== -1 && mjs.indexOf('onHome:') !== -1);
-  var beginBody = mjs.slice(mjs.indexOf('async function begin()'), mjs.indexOf('function setPaused'));
+  var beginBody = mjs.slice(mjs.indexOf('async function begin('), mjs.indexOf('function restart'));
   check('B9 begin() 重建 state 后必定解除暂停（不残留暂停态）',
     /await engine\.startRun[\s\S]*?paused = false;/.test(beginBody));
 

@@ -255,7 +255,8 @@
   }
 
   function drawExit(ctx, s, t) {
-    var x = W - 74, y = H / 2;
+    if (s.recall && s.roomIndex === s.run.rooms.length) return;
+    var x = W - 74, y = s.recall ? C.core.recall.hub[1].y : H / 2;
     var accent = P(s.room ? s.room.color_token : 'teal');
     ctx.save();
     if (s.exitActive) {
@@ -272,12 +273,90 @@
       ctx.fillText('→', x, y + 1);
       ctx.font = '400 11px system-ui, sans-serif';
       ctx.fillStyle = 'rgba(255,255,255,0.55)';
-      ctx.fillText('进入下一间', x, y + r + 18);
+      ctx.fillText(s.recall ? '进入首领战' : '进入下一间', x, y + r + 18);
     } else {
       ctx.strokeStyle = accent; ctx.globalAlpha = 0.22; ctx.lineWidth = 1.5;
       ctx.setLineDash([5, 7]);
       ctx.beginPath(); ctx.arc(x, y, C.core.engine.EXIT_R, 0, Math.PI * 2); ctx.stroke();
       ctx.setLineDash([]); ctx.globalAlpha = 1;
+    }
+    ctx.restore();
+  }
+
+  function drawRecallPaths(ctx, recall) {
+    var rules = C.core.recall;
+    var color = CUR.col.teal;
+    ctx.save();
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.strokeStyle = rgba(color, 0.75);
+    ctx.lineWidth = 2.5;
+    rules.trace(recall).forEach(function (points) {
+      ctx.beginPath();
+      ctx.moveTo(points[0].x, points[0].y);
+      for (var i = 1; i < points.length; i++) ctx.lineTo(points[i].x, points[i].y);
+      ctx.stroke();
+    });
+    if (recall.wave) {
+      var wave = recall.wave;
+      ctx.strokeStyle = rgba(color, 0.45);
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      ctx.moveTo(wave.parts[0].a.x, wave.parts[0].a.y);
+      wave.parts.forEach(function (part) { ctx.lineTo(part.b.x, part.b.y); });
+      ctx.stroke();
+      var sections = rules.waveSections(wave, wave.position - 95, wave.position);
+      sections.forEach(function (part) {
+        ctx.beginPath();
+        ctx.moveTo(part.a.x, part.a.y);
+        ctx.lineTo(part.b.x, part.b.y);
+        ctx.strokeStyle = rgba(color, 0.15);
+        ctx.lineWidth = part.radius * 2;
+        ctx.stroke();
+        ctx.strokeStyle = shade(color, 0.45);
+        ctx.lineWidth = 5;
+        ctx.stroke();
+      });
+      if (sections.length) {
+        var tip = sections[sections.length - 1].b;
+        ctx.fillStyle = shade(color, 0.85);
+        ctx.beginPath(); ctx.arc(tip.x, tip.y, 6, 0, Math.PI * 2); ctx.fill();
+      }
+    }
+    ctx.restore();
+  }
+
+  function drawRecallHubs(ctx, s, t) {
+    var r = s.recall;
+    var boss = s.enemies.find(function (e) { return e.patrol; });
+    ctx.save();
+    C.core.recall.hub.forEach(function (p, i) {
+      var marked = r.origin === i;
+      var available = r.origin == null && !r.wave;
+      var w = marked ? 25 + 2 * Math.sin(t * 5) : 19;
+      ctx.strokeStyle = rgba(CUR.col.teal, marked ? 0.95 : available ? 0.65 : 0.25);
+      ctx.fillStyle = rgba(CUR.col.teal, marked ? 0.16 : 0.05);
+      ctx.lineWidth = marked ? 2 : 1.5;
+      ctx.beginPath(); ctx.arc(p.x, p.y, w, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+      if (marked) {
+        ctx.fillStyle = shade(CUR.col.teal, 0.35);
+        ctx.font = '500 13px system-ui, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('起点', p.x, p.y - 33);
+      }
+    });
+    if (boss && boss.patrol.warning > 0) {
+      var patrol = boss.patrol;
+      var points = patrol.route.points;
+      var a = C.core.recall.hub[patrol.hub], b = points[patrol.hub === 0 ? 1 : points.length - 2];
+      var len = Math.hypot(b.x - a.x, b.y - a.y);
+      ctx.translate(a.x, a.y);
+      ctx.rotate(Math.atan2(b.y - a.y, b.x - a.x));
+      ctx.strokeStyle = rgba(CUR.col.amber, 0.8 + 0.2 * Math.sin(t * 16));
+      ctx.lineWidth = 4;
+      for (var d = 42; d < Math.min(len, 105); d += 22) {
+        ctx.beginPath(); ctx.moveTo(d - 9, -10); ctx.lineTo(d, 0); ctx.lineTo(d - 9, 10); ctx.stroke();
+      }
     }
     ctx.restore();
   }
@@ -417,6 +496,13 @@
       rr(ctx, -e.r, -e.r, e.r * 2, e.r * 2, 3); ctx.fill();
       ctx.globalAlpha = 0.35;
       rr(ctx, -e.r - 5, -e.r - 5, e.r * 2 + 10, e.r * 2 + 10, 4); ctx.stroke();
+    } else if (e.turret) {
+      ctx.fillStyle = shade(color, -0.45);
+      polygon(ctx, 0, 0, e.r + 5, 6, Math.PI / 6); ctx.fill();
+      ctx.stroke();
+      ctx.rotate(e.angle);
+      ctx.fillStyle = e.timer < 0.4 ? shade(CUR.col.crit, 0.45) : color;
+      rr(ctx, -9, -7, e.r + 17, 14, 3); ctx.fill();
     } else if (e.shape === 'static') {
       polygon(ctx, 0, 0, e.r, 6, t * 0.25); ctx.fill();
       ctx.globalAlpha = 0.3; polygon(ctx, 0, 0, e.r + 7, 6, t * 0.25); ctx.stroke();
@@ -428,6 +514,13 @@
       polygon(ctx, 0, 0, e.r * 0.45, 4, t * 0.7); ctx.fill();
     }
     styleEnemy(ctx, e, color, CUR.vis.enemyStyle);
+    if (e.patrol) {
+      ctx.strokeStyle = e.guardOpen > 0 ? CUR.col.crit : shade(CUR.col.violet, e.shieldFlash > 0 ? 0.85 : 0.35);
+      ctx.globalAlpha = e.guardOpen > 0 ? 0.85 : 0.7;
+      ctx.lineWidth = e.guardOpen > 0 ? 2 : 3;
+      if (e.guardOpen > 0) ctx.setLineDash([5, 7]);
+      ctx.beginPath(); ctx.arc(0, 0, e.r + 8, 0, Math.PI * 2); ctx.stroke();
+    }
     ctx.restore();
 
     var bw = e.isBoss ? 90 : 34;
@@ -714,7 +807,9 @@
       ctx.translate((Math.random() * 2 - 1) * s.shake, (Math.random() * 2 - 1) * s.shake);
     }
     drawBackground(ctx, s, t);
+    if (s.recall) drawRecallPaths(ctx, s.recall);
     drawWalls(ctx, s);
+    if (s.recall) drawRecallHubs(ctx, s, t);
     drawExit(ctx, s, t);
     drawParticles(ctx, s);
     drawTrail(ctx, s);

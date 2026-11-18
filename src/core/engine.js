@@ -208,8 +208,8 @@
 
   /* T24-D：按 pattern（或房间 color_token）产出 enemy.colorToken 供视觉层取色；
    * enemy.color 保留 v1 计算作为兼容回退，geometry 下视觉等价。 */
-  function makeEnemy(spec, isBoss, roomToken) {
-    var p = spawnPoint();
+  function makeEnemy(spec, isBoss, roomToken, position) {
+    var p = position || spawnPoint();
     var r = isBoss ? 34 : ENEMY_R;
     var fallbackToken = (typeof roomToken === 'string' && roomToken) ? roomToken : 'teal';
     var token = isBoss ? 'rust' : (PATTERN_TOKEN[spec.pattern] || fallbackToken);
@@ -248,7 +248,7 @@
     s.room = room;
     s.roomType = roomType;                       /* C5 */
     s.bossPhase = 1;                             /* C5 */
-    s.walls = buildWalls(room.shape);
+    s.walls = s.prototype ? border().concat(C.core.recall.walls) : buildWalls(room.shape);
     s.enemies = [];
     s.bullets = [];
     s.enemyBullets = [];
@@ -257,11 +257,24 @@
     s.player.x = 92;
     s.player.y = H / 2;
     s.player.vx = s.player.vy = 0;
-    room.enemies.forEach(function (spec) {
-      var c = calibrate(spec, i, s.run.rooms.length, roomType);
-      var shaped = { hp: c.hp, damage: c.damage, pattern: spec.pattern, type: spec.type };
-      for (var k = 0; k < c.count; k++) s.enemies.push(makeEnemy(shaped, false, room.color_token));
-    });
+    if (s.prototype) {
+      resetRecall(s);
+      var turret = makeEnemy({ hp: 44, damage: 8, pattern: 'static' }, false, 'violet',
+        { x: 480, y: s.prototype === 'B' ? 126 : 516 });
+      turret.turret = true;
+      turret.timer = 1.6;
+      s.enemies = [
+        makeEnemy({ hp: 36, damage: 8, pattern: 'chase' }, false, room.color_token, { x: 565, y: 264 }),
+        makeEnemy({ hp: 30, damage: 7, pattern: 'chase' }, false, room.color_token, { x: 755, y: 264 }),
+        turret
+      ];
+    } else {
+      room.enemies.forEach(function (spec) {
+        var c = calibrate(spec, i, s.run.rooms.length, roomType);
+        var shaped = { hp: c.hp, damage: c.damage, pattern: spec.pattern, type: spec.type };
+        for (var k = 0; k < c.count; k++) s.enemies.push(makeEnemy(shaped, false, room.color_token));
+      });
+    }
     /* T24-B 房间分型：rest 回血 / event 自动奖励（风险选择简化）/ elite 词缀已在 calibrate */
     if (roomType === 'rest') {
       var heal = Math.min(B.restHeal, s.player.maxHp - s.player.hp);
@@ -281,23 +294,44 @@
     s.room = { name: '终室', shape: 'arena', color_token: 'rust', path_hint: '观察蓄力方向，侧身闪避后反击' };
     s.roomType = 'normal';
     s.bossPhase = 1;                              /* C5：Boss 两阶段 */
-    s.walls = buildWalls('arena');
+    s.walls = s.prototype ? border().concat(C.core.recall.walls) : buildWalls('arena');
     var bossSpec = {
       hp: Math.round(s.run.boss.hp * B.bossHpMul),  /* T24-C：Boss hp 增长曲线 */
       damage: s.run.boss.damage,
       pattern: s.run.boss.pattern,
       type: s.run.boss.name
     };
-    s.enemies = [makeEnemy(bossSpec, true, s.room.color_token)];
+    if (s.prototype) {
+      bossSpec.hp = B.recall.bossHp;
+      var boss = makeEnemy(bossSpec, true, s.room.color_token, C.core.recall.hub[1]);
+      boss.r = 28;
+      boss.guardOpen = 0;
+      boss.shieldFlash = 0;
+      boss.patrol = { hub: 1, cursor: 0, phase: 1, route: null, warning: 0 };
+      s.enemies = [boss];
+      s.room.path_hint = '用回扫打开首领护盾';
+    } else s.enemies = [makeEnemy(bossSpec, true, s.room.color_token)];
     s.bullets = [];
     s.enemyBullets = [];
     s.exitActive = false;
     s.phase = 'boss';
     s.player.x = 92; s.player.y = H / 2;
     s.player.vx = s.player.vy = 0;
+    if (s.prototype) resetRecall(s);
     s.transition = 0.55;
     A('boss');
     emit(s, 'bossEnter', { boss: s.run.boss, phase: 1 });
+  }
+
+  function resetRecall(s) {
+    var start = C.core.recall.hub[0];
+    s.recall = C.core.recall.create();
+    s.player.x = start.x;
+    s.player.y = start.y;
+    s.player.dashTime = 0;
+    s.trail = [];
+    s.particles = [];
+    s.damagePops = [];
   }
 
   /* ---------- 状态创建 ---------- */
@@ -330,8 +364,27 @@
   }
 
   /* ---------- 开局 ---------- */
+  function startRecall(opts) {
+    var variant = opts.prototype === 'B' ? 'B' : 'A';
+    var run = {
+      theme: C.theme.get(opts.theme).id,
+      rooms: [{ name: '三岔廊', color_token: 'teal', path_hint: '从标记廊口出发，从另一边回来' }],
+      boss: { name: '巡廊者', hp: B.recall.bossHp, damage: B.recall.bossDamage, pattern: 'ranged' }
+    };
+    state = createState(run, []);
+    state.prototype = variant;
+    state.onEvent = opts.onEvent || null;
+    enterRoom(0);
+    state.phase = 'perk';
+    state.perkPending = Object.keys(C.core.perks.RECALL);
+    emit(state, 'runStart', { prototype: variant });
+    emit(state, 'perkOffer', { choices: state.perkPending, prototype: true });
+    return state;
+  }
+
   async function startRun(opts) {
     opts = opts || {};
+    if (opts.prototype) return startRecall(opts);
     loadMeta();
     var idx = opts.runIndex || runIndex;
     var theme = C.theme.get(opts.theme);
@@ -360,6 +413,10 @@
 
   /* ---------- 伤害 ---------- */
   function damageEnemy(s, e, dmg, crit, chainDepth) {
+    if (e.patrol && e.guardOpen <= 0) {
+      e.shieldFlash = 0.12;
+      return false;
+    }
     e.hp -= dmg;
     e.flash = 0.12;
     burst(s, e.x, e.y, crit ? '#E9A23B' : e.color, crit ? 9 : 5, 150);
@@ -428,6 +485,7 @@
       }
       if (e.isBoss) s.shake = 16;
     }
+    return true;
   }
 
   function hurtPlayer(s, source, baseDamage) {
@@ -448,6 +506,15 @@
   function finishRun(s, cleared) {
     if (s.phase === 'dead' || s.phase === 'won') return;
     s.phase = cleared ? 'won' : 'dead';
+    if (s.prototype) {
+      A(cleared ? 'clear' : 'death');
+      emit(s, 'runEnd', {
+        prototype: s.prototype, cleared: cleared, seconds: s.elapsed,
+        kills: s.kills, rooms: cleared ? 2 : s.roomIndex,
+        summary: cleared ? '击败了巡廊者。' : '回到廊口，再试一圈。'
+      });
+      return;
+    }
     var gained = s.gold + (cleared ? 50 : 0) + s.roomIndex * 12;
     var out = C.core.perks.on(s, 'runEnd', { gold: gained });
     s.finalGold = out.gold;
@@ -499,6 +566,14 @@
   function choosePerk(id) {
     var s = state;
     if (!s || s.phase !== 'perk') return false;
+    if (s.prototype) {
+      if (s.perkPending.indexOf(id) === -1) return false;
+      s.recallPerk = id;
+      s.perkPending = null;
+      s.phase = 'playing';
+      A('pick');
+      return true;
+    }
     if (!C.core.perks.add(s, id)) return false;
     s.pickCount = (s.pickCount || 0) + 1;      /* 驱动三选一节奏 */
     A('pick');
@@ -515,6 +590,7 @@
     var s = state;
     if (!s) return null;
     dt = Math.min(dt, 0.05);
+    if (s.prototype && dt <= 0) return s;
 
     if (s.hitstop > 0) {
       s.hitstop -= dt;
@@ -604,8 +680,22 @@
       p.vx += (ax * SPEED - p.vx) * k;
       p.vy += (ay * SPEED - p.vy) * k;
     }
-    p.x += p.vx * dt; p.y += p.vy * dt;
-    collideWalls(p, p.r);
+    if (s.recall) {
+      // 冲刺也逐段经过廊口和分界，使用碰撞结算后的位置记录。
+      var steps = Math.max(1, Math.ceil(Math.hypot(p.vx, p.vy) * dt / (p.r / 2)));
+      for (var step = 0; step < steps; step++) {
+        p.x += p.vx * dt / steps;
+        p.y += p.vy * dt / steps;
+        collideWalls(p, p.r);
+        if (C.core.recall.record(s.recall, p, s.recallPerk)) {
+          A('recall');
+          s.shake = Math.max(s.shake, 4);
+        }
+      }
+    } else {
+      p.x += p.vx * dt; p.y += p.vy * dt;
+      collideWalls(p, p.r);
+    }
 
     /* 瞄准与射击 */
     if (input.aimX != null) {
@@ -643,7 +733,7 @@
         var e = s.enemies[i];
         if (!e.dead && hitList.indexOf(e) === -1 && dist(b, e) < e.r + 5) {
           var mult = (e.isBoss && s.run.boss.weakness_perk && s.perks[s.run.boss.weakness_perk]) ? 1.35 : 1;
-          damageEnemy(s, e, Math.round(b.damage * mult), b.crit, 0);
+          if (!damageEnemy(s, e, Math.round(b.damage * mult), b.crit, 0)) return false;
           /* C5 连击：仅玩家子弹命中累积，刷新 1.5s 窗口 */
           s.combo = (s.combo || 0) + 1;
           s.comboTimer = B.comboWindow;
@@ -681,6 +771,13 @@
       if (e.isBoss && inBossP2) sp *= B.bossPhase2Speed;
 
       if (e.pattern === 'chase') {
+        if (s.recall) {
+          var target = C.core.recall.chaseTarget(e, p);
+          var gap = dist(e, target) || 1;
+          nx = (target.x - e.x) / gap;
+          ny = (target.y - e.y) / gap;
+          sp = Math.min(sp, gap / dt);
+        }
         e.vx = nx * sp; e.vy = ny * sp;
       } else if (e.pattern === 'orbit') {
         e.angle += dt * (e.isBoss ? 1.1 : 1.6);
@@ -701,6 +798,13 @@
         var pull = len > want + 30 ? 1 : (len < want - 30 ? -1 : 0);
         e.vx = nx * sp * 0.7 * pull + Math.sin(e.angle += dt * 1.3) * 18;
         e.vy = ny * sp * 0.7 * pull + Math.cos(e.angle) * 18;
+        if (e.patrol) {
+          e.guardOpen = Math.max(0, e.guardOpen - dt);
+          e.shieldFlash = Math.max(0, e.shieldFlash - dt);
+          var pos = C.core.recall.advancePatrol(e, dt, B.recall.patrolSpeed * (inBossP2 ? B.bossPhase2Speed : 1),
+            inBossP2 ? 2 : 1);
+          e.vx = (pos.x - e.x) / dt; e.vy = (pos.y - e.y) / dt;
+        }
         if (e.timer <= 0) {
           e.timer = e.isBoss ? (inBossP2 ? B.bossPhase2Cd : 1.15) : rand(1.4, 2.1);
           var bl = Math.hypot(toX, toY) || 1;
@@ -720,6 +824,7 @@
       } else { /* static → B4 固定炮台：原地驻守，但周期性向玩家发弹，
                  * 消除「敌怪呆在原地且毫无威胁」的观感；伤害沿用 e.damage。 */
         e.vx = 0; e.vy = 0;
+        if (e.turret) e.angle = Math.atan2(toY, toX);
         if (e.timer <= 0) {
           e.timer = rand(1.5, 2.3);
           var bl = Math.hypot(toX, toY) || 1;
@@ -741,6 +846,16 @@
         hurtPlayer(s, e, e.damage);
       }
     });
+
+    if (s.recall && s.recall.wave && s.phase !== 'dead') {
+      C.core.recall.advanceWave(s.recall, dt, p, s.enemies, function (enemy, damage) {
+        if (enemy.patrol) {
+          enemy.guardOpen = B.recall.guardWindow;
+          A('clear');
+        }
+        damageEnemy(s, enemy, damage, false, 1);
+      });
+    }
 
     /* T24-B 环绕卫星：位置写入 state.satellites（视觉层可选读取），撞击造成伤害 */
     if (d.satellites > 0) {
@@ -782,13 +897,17 @@
         return s;
       }
       var rc = C.core.perks.on(s, 'roomClear', { healed: 0 });
-      s.gold += 12;
+      if (!s.prototype) s.gold += 12;
       A('clear');
       emit(s, 'roomClear', { healed: rc.healed, hint: s.room.path_hint, index: s.roomIndex });
     }
     if (s.exitActive && s.phase !== 'perk' && s.phase !== 'dead' && s.phase !== 'won') {
-      var exit = { x: W - 74, y: H / 2 };
+      var exit = { x: W - 74, y: s.prototype ? C.core.recall.hub[1].y : H / 2 };
       if (dist(p, exit) < EXIT_R + p.r) {
+        if (s.prototype) {
+          enterBoss();
+          return s;
+        }
         s.phase = 'perk';
         s.perkPending = offerPerks(s);
         A('ui');

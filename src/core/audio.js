@@ -72,6 +72,7 @@
     hurt:   function () { tone({ from: 220, to: 70, dur: 0.22, type: 'sawtooth', vol: 0.4 }); noise(0.12, 0.2, 600); },
     kill:   function () { tone({ from: 420, to: 880, dur: 0.1, type: 'triangle', vol: 0.28 }); },
     pick:   function () { tone({ from: 620, dur: 0.09, type: 'sine', vol: 0.3 }); tone({ from: 930, dur: 0.13, type: 'sine', vol: 0.25, delay: 0.07 }); },
+    recall: function () { tone({ from: 660, to: 220, dur: 0.42, type: 'triangle', vol: 0.28 }); },
     clear:  function () { [523, 659, 784].forEach(function (f, i) { tone({ from: f, dur: 0.16, type: 'triangle', vol: 0.26, delay: i * 0.075 }); }); },
     boss:   function () { tone({ from: 90, to: 55, dur: 0.6, type: 'sawtooth', vol: 0.4 }); noise(0.4, 0.2, 400); },
     death:  function () { tone({ from: 300, to: 45, dur: 0.8, type: 'sawtooth', vol: 0.42 }); },
