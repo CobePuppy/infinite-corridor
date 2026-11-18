@@ -361,6 +361,142 @@
     ctx.restore();
   }
 
+  function drawImpactCorridor(ctx, combinations) {
+    var wall = C.core.impact.reflector;
+    ctx.save();
+    ctx.strokeStyle = rgba(CUR.col.player, 0.20);
+    ctx.lineWidth = 1;
+    ctx.setLineDash([7, 15]);
+    ctx.beginPath(); ctx.moveTo(102, 300); ctx.lineTo(wall.x, 300); ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.strokeStyle = rgba(CUR.col.amber, 0.85);
+    ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(wall.x, wall.y + 8); ctx.lineTo(wall.x, wall.y + wall.h - 8); ctx.stroke();
+    if (combinations) {
+      var upper = C.core.impact.walls[0];
+      ctx.strokeStyle = rgba(CUR.col.violet, 0.74);
+      ctx.beginPath(); ctx.moveTo(upper.x + 8, upper.y + upper.h);
+      ctx.lineTo(upper.x + upper.w - 8, upper.y + upper.h); ctx.stroke();
+    }
+    ctx.fillStyle = CUR.col.amber;
+    ctx.font = '500 11px system-ui, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('反弹墙', wall.x + wall.w / 2, wall.y - 8);
+    ctx.restore();
+  }
+
+  function drawImpactTrails(ctx, s) {
+    ctx.save();
+    ctx.lineCap = 'round';
+    s.enemies.forEach(function (e) {
+      if (!e.flight) {
+        if (e.charger && (e.mode === 'wind' || e.mode === 'charge')) {
+          ctx.strokeStyle = CUR.col.rust;
+          ctx.lineWidth = 2.5;
+          ctx.setLineDash(e.mode === 'wind' ? [6, 5] : []);
+          impactArrow(ctx, e.x + e.lockX * 18, e.y + e.lockY * 18, Math.atan2(e.lockY, e.lockX), 53);
+          ctx.setLineDash([]);
+        }
+        return;
+      }
+      var x = e.x - e.vx * 0.084, y = e.y - e.vy * 0.084;
+      var effect = e.flight.effect;
+      var col = e.hp === 0 ? CUR.col.rust : (effect ? impactColor(effect.kind) : CUR.col.amber);
+      var trail = ctx.createLinearGradient(x, y, e.x, e.y);
+      trail.addColorStop(0, rgba(col, 0));
+      trail.addColorStop(1, rgba(col, 0.82));
+      ctx.strokeStyle = trail;
+      ctx.lineWidth = 9;
+      ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(e.x, e.y); ctx.stroke();
+      ctx.strokeStyle = col;
+      ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.arc(e.x, e.y, e.r + 7, 0, Math.PI * 2); ctx.stroke();
+      if (s.impact.combinations) {
+        var speed = Math.hypot(e.vx, e.vy) || 1;
+        var dx = e.vx / speed, dy = e.vy / speed;
+        var tipX = e.x + dx * 24, tipY = e.y + dy * 24;
+        var heading = Math.atan2(dy, dx);
+        if (e.flight.reflected && (!effect || effect.kind === 'fold')) {
+          ctx.strokeStyle = CUR.col.violet;
+          ctx.beginPath(); ctx.moveTo(tipX, tipY);
+          tipX += dx * 11; tipY += dy * 11;
+          ctx.lineTo(tipX, tipY); ctx.stroke();
+          heading = effect ? Math.atan2(effect.dy, effect.dx) : s.player.angle;
+        }
+        ctx.lineWidth = effect ? 3 : 1.75;
+        impactArrow(ctx, tipX, tipY, heading, 18);
+      }
+    });
+    ctx.restore();
+  }
+
+  function impactColor(kind) {
+    if (kind === 'fold') return CUR.col.violet;
+    if (kind === 'borrow') return CUR.col.rust;
+    return kind === 'straight' || kind === 'redirect' ? CUR.col.player : CUR.col.amber;
+  }
+
+  function impactArrow(ctx, x, y, heading, length) {
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(heading);
+    ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(length, 0);
+    ctx.moveTo(length - 6, -5); ctx.lineTo(length, 0); ctx.lineTo(length - 6, 5); ctx.stroke();
+    ctx.restore();
+  }
+
+  function drawImpactActions(ctx, g) {
+    ctx.save();
+    if (g.swing && g.swing.life > 0) {
+      var sw = g.swing;
+      var w = C.core.perks.BALANCE.impact.blade;
+      ctx.globalAlpha = sw.life / sw.max;
+      ctx.fillStyle = rgba(CUR.col.player, 0.16);
+      ctx.strokeStyle = CUR.col.player;
+      ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(sw.x, sw.y);
+      ctx.arc(sw.x, sw.y, w.range, sw.angle - w.halfArc, sw.angle + w.halfArc);
+      ctx.closePath(); ctx.fill(); ctx.stroke();
+    }
+    if (g.shot && g.shot.life > 0) {
+      var points = g.shot.points;
+      ctx.globalAlpha = g.shot.life / g.shot.max;
+      ctx.lineCap = 'round';
+      ctx.strokeStyle = CUR.col.bullet;
+      ctx.lineWidth = 3;
+      for (var i = 1; i < points.length; i++) {
+        if (i === 2) ctx.strokeStyle = CUR.col.amber;
+        ctx.beginPath(); ctx.moveTo(points[i - 1].x, points[i - 1].y);
+        ctx.lineTo(points[i].x, points[i].y); ctx.stroke();
+      }
+    }
+    g.marks.forEach(function (m) {
+      var ratio = m.life / m.max;
+      var color = impactColor(m.kind);
+      ctx.globalAlpha = ratio;
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = color;
+      ctx.beginPath(); ctx.arc(m.x, m.y, 7 + (1 - ratio) * 27, 0, Math.PI * 2); ctx.stroke();
+      if (m.kind === 'relay' && !g.combinations) {
+        ctx.fillStyle = color;
+        ctx.font = '700 15px system-ui, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('×' + m.depth, m.x, m.y + 28 + (1 - ratio) * 8);
+      } else if (m.kind !== 'relay') {
+        var heading = Math.atan2(m.dy, m.dx);
+        if (m.kind === 'fold') {
+          var spread = C.core.perks.BALANCE.impact.combinations.foldAngle;
+          impactArrow(ctx, m.x, m.y, heading - spread, 43);
+          impactArrow(ctx, m.x, m.y, heading + spread, 43);
+        } else {
+          var length = m.kind === 'straight' || m.kind === 'borrow' ? 54 : 29;
+          impactArrow(ctx, m.x + m.dx * 8, m.y + m.dy * 8, heading, length);
+        }
+      }
+    });
+    ctx.restore();
+  }
+
   function drawParticles(ctx, s) {
     var ps = CUR.vis.particleStyle;
     s.particles.forEach(function (p) {
@@ -483,7 +619,8 @@
       ctx.closePath(); ctx.fill();
       ctx.globalAlpha = 0.35; ctx.beginPath(); ctx.arc(0, 0, e.r + 7, 0, Math.PI * 2); ctx.stroke();
     } else if (e.shape === 'charge') {
-      var a = Math.atan2(e.vy, e.vx); ctx.rotate(a);
+      var a = e.charger && e.mode === 'wind' ? Math.atan2(e.lockY, e.lockX) : Math.atan2(e.vy, e.vx);
+      ctx.rotate(a);
       ctx.beginPath(); ctx.moveTo(e.r + 4, 0); ctx.lineTo(-e.r, -e.r * 0.8); ctx.lineTo(-e.r, e.r * 0.8);
       ctx.closePath(); ctx.fill();
       if (e.mode === 'wind') {
@@ -810,11 +947,14 @@
     if (s.recall) drawRecallPaths(ctx, s.recall);
     drawWalls(ctx, s);
     if (s.recall) drawRecallHubs(ctx, s, t);
-    drawExit(ctx, s, t);
+    if (s.impact) drawImpactCorridor(ctx, s.impact.combinations);
+    else drawExit(ctx, s, t);
     drawParticles(ctx, s);
     drawTrail(ctx, s);
+    if (s.impact) drawImpactTrails(ctx, s);
     s.enemies.forEach(function (e) { drawEnemy(ctx, e, t); });
     drawBullets(ctx, s);
+    if (s.impact) drawImpactActions(ctx, s.impact);
     drawPlayer(ctx, s, t);
     ctx.restore();
 

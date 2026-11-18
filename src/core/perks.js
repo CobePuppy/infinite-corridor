@@ -58,6 +58,20 @@
       name: '长程蓄力', rarity: 'rare', tag: '长圈', desc: '绕经下廊组成长圈（总路程至少 1850），回扫伤害从 26 提升到 44。'
     }
   };
+  var IMPACT = {
+    p_impact_heavy: {
+      name: '重击', rarity: 'rare', tag: '重刃', desc: '挥击静止或行走中的敌人时，击飞距离更远。'
+    },
+    p_impact_pursuit: {
+      name: '追击', rarity: 'rare', tag: '重刃', desc: '补击飞行目标时多跟进一步，并立即恢复冲刺。'
+    },
+    p_impact_bank: {
+      name: '折射', rarity: 'rare', tag: '手炮', desc: '点射碰墙后会反弹一次，沿反弹方向击飞命中的目标。'
+    },
+    p_impact_pierce: {
+      name: '贯穿', rarity: 'rare', tag: '手炮', desc: '一发点射可以连续击飞同一条线上的两个敌人。'
+    }
+  };
 
   /* ---- T28 集成修复：UI 展示元数据（表外注入，冻结区字面值一行未动） ----
    * ① 冻结契约 C1：前 10 个词条的 id/name/desc/rarity/max/tag 与 derive() 派生数值
@@ -114,6 +128,21 @@
       speed: 860, width: 30, damage: 26,
       cornerWidth: 57, cornerDistance: 96, longDistance: 1850, longDamage: 44,
       guardWindow: 3.3, bossHp: 224, bossDamage: 8, patrolSpeed: 132
+    },
+    impact: {
+      blade: { damage: 12, cooldown: 0.32, range: 74, halfArc: 0.73, speed: 530, redirect: 480 },
+      cannon: { damage: 10, cooldown: 0.28, range: 560, speed: 415, redirect: 385 },
+      lunge: 14, pursuitStep: 26, heavyMultiplier: 1.35,
+      flightTime: 0.94, drag: 1.15, bounce: 0.83, relay: 0.96, minSpeed: 65,
+      impactDamage: 0.056, inputBuffer: 0.17, firstGrace: 1.65, secondGrace: 2.6,
+      firstHp: 78, secondHp: 112, enemySpeed: 86, enemyDamage: 9,
+      combinations: {
+        firstHp: 72, secondHp: 89,
+        sameDirection: 0.9, sideDirection: 0.62,
+        straightBoost: 1.48, foldRadius: 99, foldAngle: 0.92, foldSpeed: 0.75,
+        chargeWarning: 1.35, chargeTime: 0.64, chargeRecovery: 1.55,
+        chargeSpeed: 290, borrowCarry: 0.42, borrowBoost: 1.22
+      }
     }
   };
 
@@ -283,7 +312,7 @@
   C.core = C.core || {};
   C.core.perks = {
     TABLE: TABLE, IDS: IDS, RARITY_LABEL: RARITY_LABEL, RARITY_RANK: RARITY_RANK,
-    BALANCE: BALANCE, RECALL: RECALL,
+    BALANCE: BALANCE, RECALL: RECALL, IMPACT: IMPACT,
     stacks: stacks, canOffer: canOffer, add: add, derive: derive, on: on,
     synergies: synergies,
     /* T28：UI 展示接口（不参与规则运算） */

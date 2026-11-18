@@ -313,6 +313,46 @@ function src(f) { return fs.readFileSync(path.join(SRC, f), 'utf8'); }
   check('B9 begin() 重建 state 后必定解除暂停（不残留暂停态）',
     /await engine\.startRun[\s\S]*?paused = false;/.test(beginBody));
 
+  section('§A8 击飞接力和碰撞组合入口');
+  for (var weapon of ['blade', 'cannon']) {
+    byId('impact-weapon').value = weapon;
+    byId('btn-impact').click();
+    await Promise.resolve();
+    var impact = E.getState();
+    check(weapon + ' 首页武器选择进入接力试玩', impact.impact.weapon === weapon &&
+      !impact.impact.combinations && S.current() === null);
+    impact.enemies.length = 0;  // 跳过战斗，验证卡片与主循环的事件接线
+    E.update(1 / 60, {});
+    var cards = byId('perk-cards').children;
+    var names = weapon === 'blade' ? ['重击', '追击'] : ['折射', '贯穿'];
+    check(weapon + ' 接力卡片仅显示对应武器', S.current() === 'perk' && cards.length === 2 &&
+      cards.every(function (card, i) { return card.innerHTML.indexOf(names[i]) !== -1; }));
+    cards[0].click();
+    check(weapon + ' 选卡回到第二组', impact.impact.wave === 2 && S.current() === null);
+
+    S.show('start');
+    byId('btn-impact-combinations').click();
+    await Promise.resolve();
+    var comboTrial = E.getState();
+    check(weapon + ' 首页进入连续战斗', comboTrial.impact.weapon === weapon &&
+      comboTrial.impact.combinations && S.current() === null);
+    comboTrial.enemies.length = 0;
+    E.update(1 / 60, {});
+    S.updateHud(comboTrial);
+    check(weapon + ' 第二拨直接进入冲锋预警和战斗', comboTrial.impact.wave === 2 &&
+      comboTrial.enemies.some(function (e) { return e.charger && e.mode === 'wind'; }) &&
+      byId('hud-combo').classList.contains('hidden') && S.current() === null);
+    S.show('pause');
+    S.toast('上一局的提示');
+    byId('btn-pause-restart').click();
+    await Promise.resolve();
+    var fresh = E.getState();
+    check(weapon + ' 重开继续使用同一武器和模式', fresh !== comboTrial && fresh.impact.weapon === weapon &&
+      fresh.impact.combinations && fresh.impact.wave === 1 && S.current() === null &&
+      byId('toast').textContent === '');
+    S.show('start');
+  }
+
   /* ============ §B 4 分钟节奏量化 ============ */
   section('§B1  关卡数值采样：6 模板 × 4 主题');
   var THEMES = C.theme.readyIds();

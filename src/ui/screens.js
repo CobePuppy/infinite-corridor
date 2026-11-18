@@ -41,6 +41,13 @@
     toastTimer = setTimeout(function () { el.classList.remove('show'); }, ms || 2600);
   }
 
+  function dismissToast() {
+    clearTimeout(toastTimer);
+    var el = $('toast');
+    el.classList.remove('show');
+    el.textContent = '';
+  }
+
   function rarityClass(r) { return 'r-' + r; }
 
   /* ---------- T27 通用小工具（纯函数，不改写既有状态） ---------- */
@@ -228,8 +235,9 @@
     var T = (C.core && C.core.perks && C.core.perks.TABLE) || {};
     var RL = (C.core && C.core.perks && C.core.perks.RARITY_LABEL) || {};
     /* logic-dev 可能新增词条但 TABLE 尚未同步 → 回退骨架，避免抛异常 */
-    var def = T[id] || C.core.perks.RECALL[id] || { id: id, name: id, desc: '', rarity: 'common', tag: '' };
-    var rarityLabel = RL[def.rarity] || def.rarity || '';
+    var impact = C.core.perks.IMPACT[id];
+    var def = T[id] || C.core.perks.RECALL[id] || impact || { id: id, name: id, desc: '', rarity: 'common', tag: '' };
+    var rarityLabel = impact ? '构筑点 ×1' : (RL[def.rarity] || def.rarity || '');
     var d = document.createElement('button');
     d.className = 'perk-card ' + rarityClass(def.rarity) + (opts.locked ? ' locked' : '');
     d.type = 'button';
@@ -247,7 +255,7 @@
   }
 
   /* C8：候选数由 choices 决定，2 或 3（乃至其它数量）均动态生成，不写死 2 */
-  function showPerk(choices, nextIsBoss, prototype) {
+  function showPerk(choices, nextIsBoss, prototype, impact) {
     var box = $('perk-cards');
     if (box) {
       box.innerHTML = '';
@@ -259,15 +267,22 @@
         box.appendChild(perkCard(id, { synergy: synergyHint(id, owned) }));
       });
     }
-    $('perk-title').textContent = prototype ? '选择回扫词条' : '选择一条路径';
-    $('perk-sub').textContent = prototype ? '选一种效果带入普通房和首领战' :
-      (nextIsBoss ? '选完即将进入终室 · 迎接本局的首领' : '选一个带进下一间房 · 效果可叠加');
     var st = (C.core && C.core.engine && C.core.engine.getState) ? (C.core.engine.getState() || {}) : {};
-    $('perk-room').textContent = prototype ? '试玩站位 ' + st.prototype : '第 ' + ((st.roomIndex || 0) + 1) + ' 间 通过';
+    if (impact) {
+      $('perk-room').textContent = '第 1 组已清';
+      $('perk-title').textContent = '强化' + C.core.impact.weapons[st.impact.weapon].name;
+      $('perk-sub').textContent = '获得 1 个构筑点。选一项强化，迎战下一组。';
+    } else {
+      $('perk-title').textContent = prototype ? '选择回扫词条' : '选择一条路径';
+      $('perk-sub').textContent = prototype ? '选一种效果带入普通房和首领战' :
+        (nextIsBoss ? '选完即将进入终室 · 迎接本局的首领' : '选一个带进下一间房 · 效果可叠加');
+      $('perk-room').textContent = prototype ? '试玩站位 ' + st.prototype : '第 ' + ((st.roomIndex || 0) + 1) + ' 间 通过';
+    }
     show('perk');
   }
 
   function updateHud(s) {
+    var impact = s && s.impact;
     var hudTheme = $('hud-theme');
     /* T28：实时取当前主题，不再依赖 syncThemeUI() 的缓存值。
      * 原先若通过非开始页入口 / 程序化 setActive() 切主题，HUD 标签会停留在旧值
@@ -283,8 +298,8 @@
     try {
       var st = s || {};
       var combo = st.combo;
-      fillOptional('hud-combo',
-        (typeof combo === 'number' && combo >= 2) ? ('连击 ×' + combo) : '');
+      fillOptional('hud-combo', impact ? (!impact.combinations && impact.comboTime > 0 ? '接力 ×' + impact.combo : '') :
+        ((typeof combo === 'number' && combo >= 2) ? ('连击 ×' + combo) : ''));
       /* T28：normal 为默认态，与 render.js 徽标策略保持一致，不常显「房间 · 普通」 */
       var rt = st.roomType;
       fillOptional('hud-room-type',
@@ -295,40 +310,42 @@
     } catch (e) { /* 新字段读取异常时保持隐藏即可 */ }
 
     if (!s || !s.room) return;
-    if (s.prototype) $('hud').dataset.prototype = s.prototype;
+    if (impact || s.prototype) $('hud').dataset.prototype = impact ? 'impact' : s.prototype;
     else delete $('hud').dataset.prototype;
-    $('run-gold').classList.toggle('hidden', !!s.prototype);
+    $('run-gold').classList.toggle('hidden', !!(impact || s.prototype));
     var p = s.player;
     var ratio = Math.max(0, p.hp / p.maxHp);
     $('hp-fill').style.width = (ratio * 100) + '%';
     $('hp-text').textContent = Math.max(0, Math.ceil(p.hp)) + ' / ' + p.maxHp;
     $('hp-fill').classList.toggle('low', ratio < 0.3);
 
-    var total = s.run.rooms.length;
-    var idx = Math.min(s.roomIndex, total);
-    var bossRoom = s.roomIndex >= total;
+    var total = impact ? 2 : s.run.rooms.length;
+    var idx = impact ? impact.wave - 1 : Math.min(s.roomIndex, total);
+    var bossRoom = !impact && s.roomIndex >= total;
     $('room-name').textContent = s.room.name;
-    $('room-count').textContent = bossRoom ? '终室 · 首领' : '第 ' + (idx + 1) + ' / ' + total + ' 间';
+    $('room-count').textContent = bossRoom ? '终室 · 首领' : '第 ' + (idx + 1) + ' / ' + total + (impact ? ' 组' : ' 间');
 
     var dots = $('room-dots');
     dots.innerHTML = '';
     for (var i = 0; i < total; i++) {
       var d = document.createElement('i');
-      d.className = 'dot' + (i < idx ? ' done' : (i === idx ? ' now' : ''));
+      d.className = 'dot' + (i < idx || (impact && s.phase === 'won') ? ' done' : (i === idx ? ' now' : ''));
       dots.appendChild(d);
     }
-    var bossDot = document.createElement('i');
-    bossDot.className = 'dot boss' + (s.phase === 'won' ? ' done' : (bossRoom ? ' now' : ''));
-    dots.appendChild(bossDot);
+    if (!impact) {
+      var bossDot = document.createElement('i');
+      bossDot.className = 'dot boss' + (s.phase === 'won' ? ' done' : (bossRoom ? ' now' : ''));
+      dots.appendChild(bossDot);
+    }
 
     $('gold').textContent = s.gold;
     $('timer').textContent = s.elapsed.toFixed(1) + 's';
 
     var chips = $('perk-chips');
     chips.innerHTML = '';
-    var carried = s.recallPerk ? [s.recallPerk] : Object.keys(s.perks);
+    var carried = impact && impact.perk ? [impact.perk] : (s.recallPerk ? [s.recallPerk] : Object.keys(s.perks));
     carried.forEach(function (id) {
-      var def = C.core.perks.TABLE[id] || C.core.perks.RECALL[id];
+      var def = C.core.perks.TABLE[id] || C.core.perks.RECALL[id] || C.core.perks.IMPACT[id];
       if (!def) return;
       var c = document.createElement('span');
       c.className = 'chip ' + rarityClass(def.rarity);
@@ -347,6 +364,12 @@
 
     var hint = s.room.path_hint || '';
     if (s.phase === 'won' || s.phase === 'dead') hint = '';
+    else if (impact) {
+      if (impact.combinations) hint = impact.awakeAt === Infinity ? '打飞，再松开左键补击一次' : '';
+      else if (impact.awakeAt === Infinity) hint = C.core.impact.weapons[impact.weapon].opening;
+      else if (impact.wave === 2) hint = C.core.perks.IMPACT[impact.perk].desc;
+      else hint = impact.weapon === 'blade' ? '贴近飞行中的敌人，朝新方向再挥一刀' : '换个角度补一枪，改写飞行方向';
+    }
     else if (s.exitActive) hint = '出口已开启 → 走到右侧光环';
     else if (boss && boss.patrol) {
       if (boss.guardOpen > 0) hint = '护盾已打开 · ' + boss.guardOpen.toFixed(1) + ' 秒';
@@ -359,23 +382,25 @@
       else if (s.recall.outbound) hint = '从另一条廊回到标记处';
     }
     $('hint').textContent = hint;
-    $('source').textContent = s.prototype ? '试玩 ' + s.prototype :
-      (s.source === 'fallback' ? '离线模板 #' + ((s.templateIndex || 0) + 1) : 'AI 生成');
+    $('source').textContent = impact ? C.core.impact.weapons[impact.weapon].name : (s.prototype ? '试玩 ' + s.prototype :
+      (s.source === 'fallback' ? '离线模板 #' + ((s.templateIndex || 0) + 1) : 'AI 生成'));
   }
 
   function showEnd(result) {
-    $('end-title').textContent = result.cleared ? '走廊走到了尽头' : '这次停在了这里';
+    var trial = result.prototype || result.impact;
+    $('end-title').textContent = result.cleared ? (result.impact ? '两组敌人已击退' : '走廊走到了尽头') : '这次停在了这里';
     $('end-title').className = result.cleared ? 'end-title win' : 'end-title lose';
     $('end-summary').textContent = result.summary || '';
     $('end-stats').innerHTML =
       stat('存活', result.seconds.toFixed(1) + 's') +
-      stat('通过房间', String(result.rooms)) +
+      (result.impact ? stat('通过组数', String(result.waves)) : stat('通过房间', String(result.rooms))) +
       stat('击杀', String(result.kills)) +
-      (result.prototype ? '' : stat('获得金币', '+' + result.gold));
-    $('end-wallet').classList.toggle('hidden', !!result.prototype);
-    $('btn-unlock').classList.toggle('hidden', !!result.prototype);
-    $('btn-end-home').classList.toggle('hidden', !result.prototype);
-    $('end-gold').textContent = C.core.engine.getMeta().gold;
+      (result.impact && !result.combinations ? stat('最长接力', String(result.bestChain)) :
+        (trial ? '' : stat('获得金币', '+' + result.gold)));
+    $('end-wallet').classList.toggle('hidden', !!trial);
+    $('btn-unlock').classList.toggle('hidden', !!trial);
+    $('btn-end-home').classList.toggle('hidden', !trial);
+    if (!trial) $('end-gold').textContent = C.core.engine.getMeta().gold;
     show('end');
   }
 
@@ -414,6 +439,10 @@
   function init(h) {
     handlers = h || {};
     $('btn-start').addEventListener('click', function () { handlers.onStart && handlers.onStart(); });
+    $('btn-impact').addEventListener('click', function () { handlers.onImpact && handlers.onImpact($('impact-weapon').value); });
+    $('btn-impact-combinations').addEventListener('click', function () {
+      if (handlers.onImpactCombinations) handlers.onImpactCombinations($('impact-weapon').value);
+    });
     $('btn-recall').addEventListener('click', function () { handlers.onRecall && handlers.onRecall($('recall-layout').value); });
     $('btn-restart').addEventListener('click', function () { handlers.onRestart && handlers.onRestart(); });
     $('btn-end-home').addEventListener('click', function () { handlers.onHome && handlers.onHome(); });
@@ -435,7 +464,7 @@
   C.ui = C.ui || {};
   C.ui.screens = {
     init: init, show: show, current: current, backFromUnlock: backFromUnlock,
-    toast: toast, showPerk: showPerk,
+    toast: toast, dismissToast: dismissToast, showPerk: showPerk,
     updateHud: updateHud, showEnd: showEnd, showUnlock: showUnlock, setMuted: setMuted,
     roomTypeLabel: roomTypeLabel
   };

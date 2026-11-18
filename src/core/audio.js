@@ -73,13 +73,27 @@
     kill:   function () { tone({ from: 420, to: 880, dur: 0.1, type: 'triangle', vol: 0.28 }); },
     pick:   function () { tone({ from: 620, dur: 0.09, type: 'sine', vol: 0.3 }); tone({ from: 930, dur: 0.13, type: 'sine', vol: 0.25, delay: 0.07 }); },
     recall: function () { tone({ from: 660, to: 220, dur: 0.42, type: 'triangle', vol: 0.28 }); },
+    impactSwing: function () { noise(0.065, 0.12, 1550); },
+    impactWall: function () { tone({ from: 380, to: 230, dur: 0.11, type: 'triangle', vol: 0.25 }); },
+    impactChain: function (depth) {
+      var pitch = 360 + Math.min(depth, 6) * 92;
+      tone({ from: pitch, to: pitch * 1.3, dur: depth >= 3 ? 0.18 : 0.09, type: 'triangle', vol: 0.32 });
+    },
+    impactArm: function (kind) {
+      var from = kind === 'fold' ? 700 : (kind === 'borrow' ? 290 : 520);
+      tone({ from: from, to: from * 1.3, dur: 0.065, type: 'triangle', vol: 0.23 });
+    },
+    impactSpecial: function (kind) {
+      var from = kind === 'fold' ? 880 : (kind === 'borrow' ? 250 : 620);
+      tone({ from: from, to: kind === 'straight' ? 1000 : from / 2, dur: 0.14, type: 'triangle', vol: 0.29 });
+    },
     clear:  function () { [523, 659, 784].forEach(function (f, i) { tone({ from: f, dur: 0.16, type: 'triangle', vol: 0.26, delay: i * 0.075 }); }); },
     boss:   function () { tone({ from: 90, to: 55, dur: 0.6, type: 'sawtooth', vol: 0.4 }); noise(0.4, 0.2, 400); },
     death:  function () { tone({ from: 300, to: 45, dur: 0.8, type: 'sawtooth', vol: 0.42 }); },
     start:  function () { [392, 523, 659, 880].forEach(function (f, i) { tone({ from: f, dur: 0.2, type: 'triangle', vol: 0.24, delay: i * 0.09 }); }); }
   };
 
-  function play(name) { if (SFX[name]) SFX[name](); }
+  function play(name, detail) { if (SFX[name]) SFX[name](detail); }
   function setMuted(v) { muted = !!v; }
   function isMuted() { return muted; }
 

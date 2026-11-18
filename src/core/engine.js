@@ -364,6 +364,32 @@
   }
 
   /* ---------- 开局 ---------- */
+  var impactGame = {
+    makeEnemy: makeEnemy, collideWalls: collideWalls, circleRect: circleRect,
+    hurtPlayer: hurtPlayer, finishRun: finishRun, burst: burst,
+    offer: function (s) {
+      A('clear');
+      emit(s, 'perkOffer', { choices: s.perkPending, impact: true });
+    }
+  };
+
+  function startImpact(opts) {
+    var rules = C.core.impact;
+    var weapon = rules.hasWeapon(opts.impactWeapon) ? opts.impactWeapon : 'blade';
+    var room = { name: '接力直廊', color_token: 'teal' };
+    var run = { theme: C.theme.get(opts.theme).id, rooms: [room] };
+    state = createState(run, []);
+    state.room = room;
+    state.walls = border().concat(rules.walls);
+    if (opts.impactCombinations) state.walls.push(rules.shortWall);
+    state.transition = 0;
+    state.onEvent = opts.onEvent || null;
+    rules.start(state, weapon, !!opts.impactCombinations, impactGame);
+    A('start');
+    emit(state, 'runStart', { impact: true });
+    return state;
+  }
+
   function startRecall(opts) {
     var variant = opts.prototype === 'B' ? 'B' : 'A';
     var run = {
@@ -384,6 +410,7 @@
 
   async function startRun(opts) {
     opts = opts || {};
+    if (opts.impactWeapon != null) return startImpact(opts);
     if (opts.prototype) return startRecall(opts);
     loadMeta();
     var idx = opts.runIndex || runIndex;
@@ -506,6 +533,17 @@
   function finishRun(s, cleared) {
     if (s.phase === 'dead' || s.phase === 'won') return;
     s.phase = cleared ? 'won' : 'dead';
+    if (s.impact) {
+      var g = s.impact;
+      A(cleared ? 'clear' : 'death');
+      emit(s, 'runEnd', {
+        impact: true, combinations: g.combinations, cleared: cleared, seconds: s.elapsed, kills: s.kills,
+        waves: cleared ? 2 : g.wave - 1, bestChain: g.bestChain,
+        summary: C.core.impact.weapons[g.weapon].name +
+          (g.perk ? ' · ' + C.core.perks.IMPACT[g.perk].name : '')
+      });
+      return;
+    }
     if (s.prototype) {
       A(cleared ? 'clear' : 'death');
       emit(s, 'runEnd', {
@@ -566,6 +604,7 @@
   function choosePerk(id) {
     var s = state;
     if (!s || s.phase !== 'perk') return false;
+    if (s.impact) return C.core.impact.choose(s, id, impactGame);
     if (s.prototype) {
       if (s.perkPending.indexOf(id) === -1) return false;
       s.recallPerk = id;
@@ -590,7 +629,8 @@
     var s = state;
     if (!s) return null;
     dt = Math.min(dt, 0.05);
-    if (s.prototype && dt <= 0) return s;
+    if ((s.prototype || s.impact) && dt <= 0) return s;
+    if (s.impact && s.phase === 'playing' && input.attackPressed) s.impact.buffer = B.impact.inputBuffer;
 
     if (s.hitstop > 0) {
       s.hitstop -= dt;
@@ -642,7 +682,7 @@
       if (!ax && !ay) { dx = Math.cos(p.angle); dy = Math.sin(p.angle); }
       p.dashX = dx; p.dashY = dy;
       p.dashTime = DASH_TIME;
-      p.dashCd = d.dashCd;
+      p.dashCd = s.impact ? d.dashCd / 1000 : d.dashCd;
       A('dash');
       s.shake = Math.max(s.shake, 4);
       emit(s, 'dash', {});
@@ -680,14 +720,14 @@
       p.vx += (ax * SPEED - p.vx) * k;
       p.vy += (ay * SPEED - p.vy) * k;
     }
-    if (s.recall) {
+    if (s.recall || s.impact) {
       // 冲刺也逐段经过廊口和分界，使用碰撞结算后的位置记录。
       var steps = Math.max(1, Math.ceil(Math.hypot(p.vx, p.vy) * dt / (p.r / 2)));
       for (var step = 0; step < steps; step++) {
         p.x += p.vx * dt / steps;
         p.y += p.vy * dt / steps;
         collideWalls(p, p.r);
-        if (C.core.recall.record(s.recall, p, s.recallPerk)) {
+        if (s.recall && C.core.recall.record(s.recall, p, s.recallPerk)) {
           A('recall');
           s.shake = Math.max(s.shake, 4);
         }
@@ -701,6 +741,10 @@
     if (input.aimX != null) {
       var tx = input.aimX - p.x, ty = input.aimY - p.y;
       if (Math.hypot(tx, ty) > 6) p.angle = Math.atan2(ty, tx);
+    }
+    if (s.impact) {
+      C.core.impact.update(s, dt, input, impactGame);
+      return s;
     }
     if (input.fire && p.fireCd <= 0) {
       var atk = C.core.perks.on(s, 'attack', { damage: BULLET_DMG, range: BULLET_RANGE, crit: false });
