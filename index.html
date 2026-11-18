@@ -44,7 +44,7 @@
           <div><kbd>W A S D</kbd><span>移动</span></div>
           <div><kbd>鼠标 / 空格</kbd><span>瞄准并攻击</span></div>
           <div><kbd>Shift</kbd><span>冲刺（短暂无敌）</span></div>
-          <div><kbd>Esc</kbd><span>暂停</span></div>
+          <div><kbd>Esc</kbd><span>暂停 / 返回</span></div>
         </div>
         <div class="start-actions">
           <button id="btn-start" class="btn primary" type="button">进入回廊 <span>→</span></button>
@@ -75,10 +75,27 @@
       <section id="screen-unlock" class="panel unlock-panel hidden">
         <div class="unlock-head">
           <div><h2 class="panel-title">局外解锁</h2><p class="panel-desc">用金币换取开局自带的初始词条，效果可叠加</p></div>
-          <div class="wallet">金币 <b id="unlock-gold">0</b></div>
+          <!-- B6：顶部关闭按钮，不再只能滚到底部点「返回」；Esc 同样可关闭 -->
+          <div class="unlock-head-right">
+            <div class="wallet">金币 <b id="unlock-gold">0</b></div>
+            <button id="unlock-close" class="icon-btn" type="button" aria-label="关闭局外解锁" title="关闭">×</button>
+          </div>
         </div>
         <div id="unlock-grid" class="unlock-grid"></div>
         <button id="unlock-back" class="btn ghost wide" type="button" data-from="start">返回</button>
+      </section>
+
+      <!-- B9：Esc 暂停面板。此前只有 toast 提示，没有任何重开 / 返回入口 -->
+      <section id="screen-pause" class="panel pause-panel hidden">
+        <div class="panel-kicker">PAUSED · 暂停</div>
+        <h2 class="panel-title">走廊暂时静止</h2>
+        <p class="panel-desc">随时可以回来，也可以重开本局或回到开始页。</p>
+        <div class="pause-actions">
+          <button id="btn-resume" class="btn primary" type="button">继续 <span>→</span></button>
+          <button id="btn-pause-restart" class="btn ghost" type="button">重开本局</button>
+          <button id="btn-pause-home" class="btn ghost" type="button">返回开始页</button>
+        </div>
+        <p class="footnote">按 Esc 也可继续</p>
       </section>
     </div>
   </div>
