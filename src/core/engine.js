@@ -151,12 +151,44 @@
     }
     return false;
   }
-  function spawnPoint() {
-    for (var i = 0; i < 40; i++) {
-      var p = { x: rand(W * 0.42, W * 0.86), y: rand(70, H - 70) };
-      if (!hitsWall(p.x, p.y, ENEMY_R + 6)) return p;
+  /* B1：刷怪点统一校验。此前 40 次随机只查 hitsWall()，且兜底坐标 (691,300)
+   * 完全不校验，随机区还包含画布中心 —— 敌人可能刷在墙里 / 玩家脸上，
+   * 表现为「刷到中心、偶尔清不掉场」的死档。现在所有返回点都过同一套校验：
+   * 边界 / 墙体 / 中心禁区 / 与玩家的最小安全距离。 */
+  var SPAWN_CENTER_GUARD = 120;   // 画布中心禁区半径
+  var SPAWN_PLAYER_GUARD = 170;   // 与玩家的最小出生距离
+  function spawnValid(x, y) {
+    if (x < T + ENEMY_R + 4 || x > W - T - ENEMY_R - 4 ||
+        y < T + ENEMY_R + 4 || y > H - T - ENEMY_R - 4) return false;
+    if (hitsWall(x, y, ENEMY_R + 6)) return false;
+    var cx = W / 2, cy = H / 2;
+    if ((x - cx) * (x - cx) + (y - cy) * (y - cy) < SPAWN_CENTER_GUARD * SPAWN_CENTER_GUARD) return false;
+    var p = state && state.player;
+    if (p) {
+      var dx = x - p.x, dy = y - p.y;
+      if (dx * dx + dy * dy < SPAWN_PLAYER_GUARD * SPAWN_PLAYER_GUARD) return false;
     }
-    return { x: W * 0.72, y: H / 2 };
+    return true;
+  }
+  function spawnPoint() {
+    for (var i = 0; i < 48; i++) {
+      var p = { x: rand(W * 0.42, W * 0.86), y: rand(70, H - 70) };
+      if (spawnValid(p.x, p.y)) return p;
+    }
+    /* 随机失败 → 固定候选点扫描（右侧 / 上下 / 中部），同样逐个过校验 */
+    var fx = [0.72, 0.72, 0.82, 0.60, 0.60, 0.88, 0.88, 0.50, 0.50, 0.44];
+    var fy = [0.25, 0.75, 0.50, 0.20, 0.80, 0.32, 0.68, 0.16, 0.84, 0.50];
+    for (var j = 0; j < fx.length; j++) {
+      var q = { x: W * fx[j], y: H * fy[j] };
+      if (spawnValid(q.x, q.y)) return q;
+    }
+    /* 网格兜底：整片可刷区域逐格找第一个合法点，绝不返回未校验坐标 */
+    for (var gy = 80; gy <= H - 80; gy += 36) {
+      for (var gx = W * 0.42; gx <= W * 0.86; gx += 36) {
+        if (spawnValid(gx, gy)) return { x: gx, y: gy };
+      }
+    }
+    return { x: W * 0.72, y: H * 0.25 };
   }
 
   /* ---------- 粒子 / 特效 ---------- */
@@ -332,8 +364,15 @@
     e.flash = 0.12;
     burst(s, e.x, e.y, crit ? '#E9A23B' : e.color, crit ? 9 : 5, 150);
     A('hit');
-    s.hitstop = crit ? 0.055 : 0.028;
-    s.shake = Math.max(s.shake, crit ? 7 : 3.5);
+    /* B3：普通命中不再触发时间定格。此前每颗子弹都写 0.028s，配合 update()
+     * 的 hitstop 早退，密集射击时画面一格一格卡、且所有计时器停摆（B2 同源）。
+     * 定格只留给暴击 / 击杀等重事件并封顶；普通命中只保留轻微震屏与粒子。 */
+    if (crit) {
+      s.hitstop = Math.min(s.hitstop + 0.02, 0.05);
+      s.shake = Math.max(s.shake, 5);
+    } else {
+      s.shake = Math.max(s.shake, 1.6);
+    }
     /* C5 伤害飘字：engine 产出、render 只读；每帧由 update 衰减 life */
     if (s.damagePops) {
       s.damagePops.push({
@@ -363,6 +402,9 @@
       s.gold += 2;
       burst(s, e.x, e.y, e.color, 16, 260);
       A('kill');
+      /* B3：击杀属重事件，给一次短定格（封顶），普通命中不触发 */
+      s.hitstop = Math.min(s.hitstop + 0.03, 0.06);
+      s.shake = Math.max(s.shake, 6);
       var payload = C.core.perks.on(s, 'kill', { chainChance: 0, x: e.x, y: e.y });
       if (!chainDepth) {
         /* 连锁：概率/范围/伤害全由 perks 提供；缺省回退 v1 的 130 / 8 */
@@ -474,7 +516,17 @@
     if (!s) return null;
     dt = Math.min(dt, 0.05);
 
-    if (s.hitstop > 0) { s.hitstop -= dt; return s; }
+    if (s.hitstop > 0) {
+      s.hitstop -= dt;
+      /* B2：定格期间玩家计时器照常推进。此前 hitstop>0 直接 return，
+       * dashCd / fireCd / invuln 全部停摆，密集命中下冲刺冷却看似永远不刷新。 */
+      if (s.player) {
+        s.player.invuln = Math.max(0, s.player.invuln - dt);
+        s.player.fireCd = Math.max(0, s.player.fireCd - dt);
+        s.player.dashCd = Math.max(0, s.player.dashCd - dt);
+      }
+      return s;
+    }
     s.shake = Math.max(0, s.shake - dt * 42);
     s.transition = Math.max(0, s.transition - dt);
 
@@ -665,8 +717,17 @@
             });
           }
         }
-      } else { /* static */
+      } else { /* static → B4 固定炮台：原地驻守，但周期性向玩家发弹，
+                 * 消除「敌怪呆在原地且毫无威胁」的观感；伤害沿用 e.damage。 */
         e.vx = 0; e.vy = 0;
+        if (e.timer <= 0) {
+          e.timer = rand(1.5, 2.3);
+          var bl = Math.hypot(toX, toY) || 1;
+          s.enemyBullets.push({
+            x: e.x, y: e.y, vx: (toX / bl) * 250, vy: (toY / bl) * 250,
+            damage: e.damage, life: 2.6, r: 6
+          });
+        }
       }
 
       /* T24-B 协同「卫轮 + 寒域 / 涡心」：卫星范围内敌人被向心吸附 */

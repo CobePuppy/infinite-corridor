@@ -9,9 +9,10 @@
   var handlers = {};
   var toastTimer = null;
   var themeLabel = '';
+  var currentScreen = 'start';   /* B7：main.js 需按当前弹窗决定 Esc 语义 */
 
   function show(name) {
-    ['start', 'perk', 'end', 'unlock'].forEach(function (n) {
+    ['start', 'perk', 'end', 'unlock', 'pause'].forEach(function (n) {
       var el = $('screen-' + n);
       if (el) el.classList.toggle('hidden', n !== name);
     });
@@ -19,6 +20,17 @@
     overlay.classList.toggle('hidden', !name);
     overlay.classList.toggle('dim', !!name && name !== 'perk');
     $('hud').classList.toggle('hidden', name === 'start' || name === 'unlock');
+    currentScreen = name || null;
+  }
+
+  /* 当前打开的弹窗名（null = 无弹窗、正在游戏中）。供 main.js 的 Esc / 主循环判定。 */
+  function current() { return currentScreen; }
+
+  /* B6/B7：解锁页统一返回入口 —— 顶部 ×、底部「返回」、Esc 都走这里 */
+  function backFromUnlock() {
+    var back = $('unlock-back');
+    var from = back ? back.dataset.from : 'start';
+    show(from === 'end' ? 'end' : 'start');
   }
 
   function toast(text, ms) {
@@ -228,7 +240,6 @@
       '<div class="perk-name">' + esc(def.name || id) + '</div>' +
       '<div class="perk-desc">' + esc(def.desc || '') + '</div>' +
       synergyBlock(opts.synergy) +
-      '<div class="perk-id">' + esc(def.id || id) + '</div>' +
       (opts.footer || '');
     if (opts.locked) d.disabled = true;
     else if (!opts.noPick) d.addEventListener('click', function () { handlers.onPick && handlers.onPick(id); });
@@ -382,10 +393,13 @@
     $('btn-restart').addEventListener('click', function () { handlers.onRestart && handlers.onRestart(); });
     $('btn-unlock').addEventListener('click', function () { showUnlock(true); });
     $('btn-unlock-start').addEventListener('click', function () { showUnlock(false); });
-    $('unlock-back').addEventListener('click', function () {
-      show($('unlock-back').dataset.from === 'end' ? 'end' : 'start');
-    });
+    $('unlock-back').addEventListener('click', backFromUnlock);
+    $('unlock-close').addEventListener('click', backFromUnlock);
     $('btn-mute').addEventListener('click', function () { handlers.onToggleMute && handlers.onToggleMute(); });
+    /* B9：暂停面板三个出口，全部交给 main.js 编排 */
+    $('btn-resume').addEventListener('click', function () { handlers.onResume && handlers.onResume(); });
+    $('btn-pause-restart').addEventListener('click', function () { handlers.onRestart && handlers.onRestart(); });
+    $('btn-pause-home').addEventListener('click', function () { handlers.onHome && handlers.onHome(); });
     injectHudTheme();
     buildThemePicker();
     syncThemeUI();
@@ -394,7 +408,8 @@
 
   C.ui = C.ui || {};
   C.ui.screens = {
-    init: init, show: show, toast: toast, showPerk: showPerk,
+    init: init, show: show, current: current, backFromUnlock: backFromUnlock,
+    toast: toast, showPerk: showPerk,
     updateHud: updateHud, showEnd: showEnd, showUnlock: showUnlock, setMuted: setMuted,
     roomTypeLabel: roomTypeLabel
   };

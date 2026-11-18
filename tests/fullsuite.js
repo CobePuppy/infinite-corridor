@@ -5,6 +5,9 @@
  * 定位：验证 T24–T28 五个并行会话汇合后的**跨层接线**与**4 分钟节奏**。
  *   §A 用轻量 DOM stub 在纯 Node 里按 index.html 顺序加载全部 11 个脚本，
  *      真实调用 screens / main 的事件与弹窗路径，证明「代码写了」等于「链路通了」。
+ *   §A7 对 2026-11-18《项目修改需求整理》B 板块 B1–B9 做回归断言：引擎层用真实
+ *      startRun/update 验证刷怪兜底、定格与计时器、站桩炮台；UI 层用 DOM stub 真实走
+ *      show/click 路径验证解锁页关闭、Esc 分流、词条卡文案、暂停面板。
  *   §B 采样 6 模板 × 4 主题的关卡数值，给出可复算的单局时长模型，并用真实
  *      engine.update() 帧循环验证 6–8 房 + Boss + 结算的状态机可达性。
  *
@@ -191,6 +194,125 @@ function src(f) { return fs.readFileSync(path.join(SRC, f), 'utf8'); }
   check('模板数 = 6 套（3 套 M1 冻结 + 3 套新增）', C.gen.templates.TEMPLATES.length === 6,
     '实际 ' + C.gen.templates.TEMPLATES.length);
   check('schema 房间数上限已扩到 8', /8/.test(src('gen/schema.js')));
+
+  /* ============ §A7  B 板块（2026-11-18 需求整理）回归断言 ============
+   * 覆盖 B1–B9：引擎层用真实 startRun/update 做行为验证，UI 层用 DOM stub
+   * 真实走 show/click 路径，静态契约用源码/HTML 文本核对。 */
+  section('§A7  B1–B9 回归断言');
+  var ejs = src('core/engine.js'), idx = read('index.html');
+  var noInput = { up: false, down: false, left: false, right: false,
+                  fire: false, dash: false, aimX: null, aimY: null };
+  var a7Themes = C.theme.readyIds();
+
+  /* B1：出生点不落墙 / 不落中心禁区 / 不与玩家贴脸（复刻 engine 的圆-矩判定） */
+  function wallHit(s, x, y, r) {
+    return s.walls.some(function (q) {
+      var nx = Math.max(q.x, Math.min(x, q.x + q.w));
+      var ny = Math.max(q.y, Math.min(y, q.y + q.h));
+      var dx = x - nx, dy = y - ny;
+      return dx * dx + dy * dy < r * r;
+    });
+  }
+  var spawnBad = [], spawnChecked = 0;
+  for (var sr = 0; sr < 36; sr++) {
+    var ss = await E.startRun({ theme: a7Themes[sr % a7Themes.length], runIndex: 5000 + sr });
+    ss.enemies.forEach(function (e) {
+      spawnChecked++;
+      var dcx = e.x - E.W / 2, dcy = e.y - E.H / 2;
+      var dpx = e.x - ss.player.x, dpy = e.y - ss.player.y;
+      if (wallHit(ss, e.x, e.y, 15 + 6)) spawnBad.push('墙内');
+      else if (dcx * dcx + dcy * dcy < 120 * 120) spawnBad.push('中心');
+      else if (dpx * dpx + dpy * dpy < 170 * 170) spawnBad.push('贴脸');
+    });
+  }
+  check('B1 出生点不落墙 / 不落中心 / 不贴脸（' + spawnChecked + ' 个样本）',
+    spawnChecked > 0 && spawnBad.length === 0, spawnBad.slice(0, 5).join(','));
+  check('B1 引擎统一 spawnValid() 校验，兜底坐标不再裸返回',
+    ejs.indexOf('function spawnValid(') !== -1 &&
+    ejs.indexOf('return { x: W * 0.72, y: H / 2 }') === -1);
+
+  /* B2：定格期间 dashCd 仍递减（此前 hitstop>0 直接 return，计时器全停摆） */
+  var sB2 = await E.startRun({ theme: 'geometry', runIndex: 5401 });
+  sB2.hitstop = 0.4;
+  sB2.player.dashCd = 0.5;
+  var cdBefore = sB2.player.dashCd;
+  for (var b2i = 0; b2i < 6; b2i++) E.update(1 / 60, noInput);
+  check('B2 定格期间冲刺 CD 照常递减（不再「全局只能用一次」）',
+    sB2.player.dashCd < cdBefore - 0.05 && sB2.hitstop > 0,
+    'dashCd ' + cdBefore.toFixed(2) + '→' + sB2.player.dashCd.toFixed(2));
+
+  /* B3：普通命中不再置 hitstop；暴击保留但封顶 */
+  var sB3 = await E.startRun({ theme: 'geometry', runIndex: 5402 });
+  function pushHitBullet(s, crit) {
+    var t = s.enemies[0];
+    if (t) { t.hp = t.maxHp = 200; }
+    s.player.fireCd = 1;
+    s.bullets.push({
+      x: t ? t.x : 500, y: t ? t.y : 300, vx: 0, vy: 0,
+      damage: 10, life: 1, crit: !!crit, pierce: 0, hit: []
+    });
+  }
+  sB3.hitstop = 0;
+  pushHitBullet(sB3, false);
+  E.update(1 / 60, noInput);
+  check('B3 普通命中不再触发定格（此前每颗子弹 0.028s）',
+    sB3.hitstop <= 0, 'hitstop=' + sB3.hitstop);
+  sB3.hitstop = 0;
+  pushHitBullet(sB3, true);
+  E.update(1 / 60, noInput);
+  check('B3 暴击定格保留但封顶 ≤0.05',
+    sB3.hitstop > 0 && sB3.hitstop <= 0.05, 'hitstop=' + sB3.hitstop);
+
+  /* B4：static 敌人周期性发弹，不再是站桩靶子 */
+  var sB4 = await E.startRun({ theme: 'geometry', runIndex: 5403 });
+  var ebBefore = sB4.enemyBullets.length;
+  sB4.enemies.forEach(function (e) { e.pattern = 'static'; e.timer = 0; });
+  E.update(1 / 60, noInput);
+  check('B4 static 敌人周期性发弹（不再呆在原地毫无威胁）',
+    sB4.enemyBullets.length > ebBefore,
+    '前 ' + ebBefore + ' / 后 ' + sB4.enemyBullets.length);
+
+  /* B5：顶部 HUD 半透明 + 不吃鼠标 */
+  check('B5 HUD 紧凑半透明且不阻挡画布瞄准',
+    css.indexOf('pointer-events:none') !== -1 &&
+    css.indexOf('background:linear-gradient(180deg,rgba(9,12,20,.62)') !== -1 &&
+    css.indexOf('padding:14px 20px 16px') === -1);
+
+  /* B6：解锁页顶部关闭按钮（真实点击路径） */
+  check('B6 解锁页顶部关闭按钮存在且与底部返回共用入口',
+    idx.indexOf('id="unlock-close"') !== -1 &&
+    src('ui/screens.js').indexOf("$('unlock-close').addEventListener('click', backFromUnlock)") !== -1);
+  S.showUnlock(false);
+  check('B6 showUnlock 后 current() 为 unlock', S.current() === 'unlock');
+  byId('unlock-close').click();
+  check('B6 点击顶部 × 关闭解锁页返回开始页', S.current() === 'start');
+
+  /* B7：Esc 按弹窗分流，不叠加暂停 */
+  check('B7 Esc 按 unlock / pause / perk / start / end 分流',
+    mjs.indexOf("cur === 'unlock'") !== -1 && mjs.indexOf('screens.backFromUnlock()') !== -1 &&
+    mjs.indexOf("cur === 'pause'") !== -1 && mjs.indexOf("cur === 'perk'") !== -1 &&
+    mjs.indexOf('setPaused(!paused)') !== -1);
+  check('B7 screens.current() 已导出且反映当前弹窗',
+    typeof S.current === 'function' && (S.show('pause'), S.current() === 'pause'));
+  S.show(null);
+  check('B7 show(null) 后 current() 为 null（游戏中）', S.current() === null);
+
+  /* B8：词条卡不再渲染英文函数 id */
+  S.showPerk(['p_nova', 'p_crit'], false);
+  var cardHtml = byId('perk-cards').children[0].innerHTML;
+  check('B8 词条卡不含 perk-id / 英文 id 文本',
+    cardHtml.indexOf('perk-id') === -1 && cardHtml.indexOf('p_nova') === -1);
+  check('B8 CSS 已移除 .perk-id 规则', css.indexOf('.perk-id{') === -1);
+  S.show(null);
+
+  /* B9：暂停面板三个出口 + begin() 重置 paused */
+  check('B9 暂停面板与 继续 / 重开本局 / 返回开始页 齐备',
+    idx.indexOf('id="screen-pause"') !== -1 && idx.indexOf('id="btn-resume"') !== -1 &&
+    idx.indexOf('id="btn-pause-restart"') !== -1 && idx.indexOf('id="btn-pause-home"') !== -1 &&
+    mjs.indexOf('onResume:') !== -1 && mjs.indexOf('onHome:') !== -1);
+  var beginBody = mjs.slice(mjs.indexOf('async function begin()'), mjs.indexOf('function setPaused'));
+  check('B9 begin() 重建 state 后必定解除暂停（不残留暂停态）',
+    /await engine\.startRun[\s\S]*?paused = false;/.test(beginBody));
 
   /* ============ §B 4 分钟节奏量化 ============ */
   section('§B1  关卡数值采样：6 模板 × 4 主题');

@@ -164,22 +164,38 @@
   }
 
   async function begin() {
+    paused = true;                 // 重建 state 期间冻结主循环，避免跑上一局残帧
     audio.resume();
     screens.show(null);
     var themeId = activeThemeId();
     applyAppDataTheme(themeId);        // 每次开局刷新，覆盖切主题后的重开
     await engine.startRun({ onEvent: onEvent, theme: themeId });
+    paused = false;                /* B9：无论从暂停菜单 / 结算页 / 开始页进来，新局都不残留暂停态 */
+  }
+
+  /* B9：统一的暂停开关 —— 暂停时打开面板，继续时收起面板 */
+  function setPaused(v) {
+    paused = !!v;
+    screens.show(paused ? 'pause' : null);
+    if (!paused) screens.toast('继续', 1400);
   }
 
   function loop(ts) {
     var dt = last ? (ts - last) / 1000 : 0;
     last = ts;
     clock += dt;
-    if (!paused) {
+    /* B7/B9：暂停或任意弹窗打开时只重绘静止帧、不推进引擎，
+     * 避免「弹窗里游戏还在后台跑」以及暂停后 HUD 继续走字。 */
+    var cur = screens.current();
+    var blocking = cur === 'start' || cur === 'end' || cur === 'unlock' ||
+                   cur === 'perk' || cur === 'pause';
+    if (!paused && !blocking) {
       syncInput();
       var s = engine.update(dt, input);
       render.draw(ctx, s, clock);
       screens.updateHud(s);
+    } else {
+      render.draw(ctx, engine.getState(), clock);
     }
     requestAnimationFrame(loop);
   }
@@ -210,6 +226,12 @@
         var m = !audio.isMuted();
         audio.setMuted(m);
         screens.setMuted(m);
+      },
+      /* B9：暂停面板三个出口 */
+      onResume: function () { setPaused(false); },
+      onHome: function () {
+        paused = true;               // 开始页期间不推进引擎
+        screens.show('start');
       }
     });
     screens.setMuted(audio.isMuted());
@@ -222,8 +244,17 @@
         var m = !audio.isMuted(); audio.setMuted(m); screens.setMuted(m);
       }
       if (k === 'escape') {
-        paused = !paused;
-        screens.toast(paused ? '已暂停 · 再按 Esc 继续' : '继续', 1600);
+        /* B7：Esc 语义按当前弹窗分流，杜绝「解锁页 / 词条页里叠加暂停」的冲突。
+         *  - 解锁页 → 返回（等同顶部 × / 底部「返回」）
+         *  - 暂停面板 → 继续
+         *  - 开始页 / 结算页 / 词条页 → 不叠加暂停（词条选择不可跳过）
+         *  - 无弹窗（游戏中）→ 切换暂停并打开暂停面板 */
+        var cur = screens.current();
+        if (cur === 'unlock') screens.backFromUnlock();
+        else if (cur === 'pause') setPaused(false);
+        else if (cur === 'perk') screens.toast('请先选择一条路径', 1600);
+        else if (cur === 'start' || cur === 'end') { /* 不叠加暂停 */ }
+        else setPaused(!paused);
       }
       if ((k === 'r' || k === 'enter') && e.target && e.target.tagName !== 'BUTTON' && !document.getElementById('screen-end').classList.contains('hidden')) begin();
     });

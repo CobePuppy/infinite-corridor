@@ -20,21 +20,28 @@
   新增 `tests/fullsuite.js` **46/46**；四套主题经不占端口的一次性无头截图确认视觉分化。
   §8 第 1–5 条维持「通过」，第 6–8 条仍为人工项（真人计时 / 90 秒视频 / 大赛提交）。
   详见文末「附录：M5 全套集成验收」。
+- **2026-11-18《项目修改需求整理》B 板块修复（开发总监）**：用户提供的需求文档存在 6 处术语错位
+  （「四地图 / 3 层关卡 / 局外科技树 / 奖励箱」等均不在当前代码库），总监逐条核到真实代码后，
+  按用户选定范围「先修确证的 Bug」落地 B1–B9 共 8 条低风险修复（B2 与 B3 同源合并）。
+  复跑 `smoke 20/20`、`m2m3 58/0/0`、新增 §A7 后 `fullsuite 63/63`；四张一次性无头实拍确认 HUD /
+  暂停面板 / 词条卡 / 解锁页视觉正常，**零端口占用、零后台进程**。逐条对照见
+  `docs/requirements-2026-11-18.md`，修复明细见文末「附录：B 板块修复」。
 - 「当前依据」只记录当前代码快照下自动化测试的客观结果，供总监复跑时比对，**不替代验收结论**。
 - 相关资产：`tests/smoke.js`（M1 基线，20/20，禁止改动）、`tests/m2m3.js`（M4 验收资产）、
-  `tests/fullsuite.js`（M5 跨层接线 + 节奏量化）、`docs/demo-90s.md`（90 秒高光蒙太奇与记录表）。
+  `tests/fullsuite.js`（M5 跨层接线 + 节奏量化 + 2026-11-18 §A7 B 板块回归）、
+  `docs/demo-90s.md`（90 秒高光蒙太奇与记录表）、`docs/requirements-2026-11-18.md`（需求台账）。
 
 ### 当前集成快照（供比对，非验收结论）
 
 | 项 | 值 |
 |---|---|
-| 代码基线 | `845ba76`（M2/M3/M4，已推 `origin/main`）→ 本次 M5「全套」集成提交 |
-| 工作区改动 | 11 个源码文件（T24–T27 四方）+ 1 个新增 `tests/fullsuite.js` + 3 份文档；`tests/smoke.js` 与 `core/audio.js` 未改动 |
+| 代码基线 | `7c337b7`（M5 全套集成，已推 `origin/main`）→ 本次「B 板块修复」提交 |
+| 工作区改动 | `engine.js` / `main.js` / `screens.js` / `style.css` / `index.html` / `tests/fullsuite.js` / `docs/acceptance.md` / `README.md` + 新增 `docs/requirements-2026-11-18.md`；`tests/smoke.js` 与冻结区词条数值未改动 |
 | `node tests/smoke.js` | **20 passed / 0 failed**（冻结基线未动） |
 | `node tests/m2m3.js` | **58 passed / 0 failed / 0 waiting**（含 360/360 组 validate、四类降级均 `source='fallback'`） |
-| `node tests/fullsuite.js` | **46 passed / 0 failed**（跨层接线 §A + 节奏量化 §B） |
-| 浏览器实拍 | M5 四主题战斗画面一次性无头截图，不起端口 / 不起后台进程，四套色板与背景分化确认 |
-| 备注 | 2026-11-17 开发总监已完成集成验收；7 处跨层缺口全部修复（见文末 M5 附录）。单局 240s±30s 属真人手感范畴，理论模型不作为验收结论 |
+| `node tests/fullsuite.js` | **63 passed / 0 failed**（46 项 §A + §B，加 2026-11-18 §A7 的 17 项 B1–B9 回归断言） |
+| 浏览器实拍 | M5 四主题战斗画面 + 2026-11-18 `hud / pause / perk / unlock` 四张一次性无头截图；不起端口 / 不起后台进程 |
+| 备注 | 2026-11-17 完成 M5 集成验收（7 处跨层缺口全修）；2026-11-18 完成 B 板块 8 条修复。单局 240s±30s 属真人手感范畴，理论模型不作为验收结论 |
 
 ---
 
@@ -263,3 +270,46 @@ HUD 右上角「主题 旧城」排版整齐、标签实时同步（修复 #6 / 
 - **提交形态缺口**：官方要求 Qoder Sites 公网地址 + 作品帖五部分介绍 + 截图凭证；
   当前只有 GitHub + `file://`，须用户确认 Qoder 账号与部署路径后推进，总监不擅自公网发布。
 - `git add` / `commit` / `push` 由总监统一执行。
+
+---
+
+## 附录：《项目修改需求整理》B 板块修复（2026-11-18）
+
+来源：用户提供的 `C:/Users/Administrator/Downloads/项目修改需求整理.md`（原文注明 11/19 前后作者还会追加）。
+**完整逐条对照、术语错位说明与 M/N 排期见 `docs/requirements-2026-11-18.md`。**
+
+### 一、范围决策
+
+用户选定「先修确证的 Bug」：只做 B 板块低风险修复，不碰数值与架构，一次提交；
+M2 的「长局 + 存档」作为**已定方向**写进台账排下一轮，本轮不改任何数值常量。
+
+### 二、8 条修复落点
+
+| # | 修复 | 文件 |
+|---|---|---|
+| B1 | `spawnValid()` 统一校验出生点（边界 / 墙体 / 中心 120px 禁区 / 玩家 170px 安全距离）+ 固定候选点扫描 + 网格兜底 | `src/core/engine.js` |
+| B2 | 定格期间照常递减 `invuln / fireCd / dashCd` | `src/core/engine.js` |
+| B3 | 普通命中不再定格、震屏 3.5→1.6；定格只留给暴击 / 击杀并封顶 0.05 / 0.06 | `src/core/engine.js` |
+| B4 | `static` 敌人改为固定炮台，每 1.5–2.3s 向玩家发弹 | `src/core/engine.js` |
+| B5 | HUD 紧凑化 + 半透明渐变 + `pointer-events:none`（交互控件放行） | `src/ui/style.css` |
+| B6 | 解锁页头部 `#unlock-close`（×），与底部返回共用 `backFromUnlock()` | `index.html` / `src/ui/screens.js` / `src/ui/style.css` |
+| B7 | Esc 按 `screens.current()` 分流，弹窗内不叠加暂停；主循环在暂停 / 弹窗期间只重绘不推进 | `src/ui/screens.js` / `src/ui/main.js` |
+| B8 | 词条卡移除英文函数 id `<div class="perk-id">` 及对应 CSS | `src/ui/screens.js` / `src/ui/style.css` |
+| B9 | 新增 `#screen-pause`（继续 / 重开本局 / 返回开始页）；`begin()` 完成后强制 `paused=false` | `index.html` / `src/ui/main.js` / `src/ui/screens.js` / `src/ui/style.css` |
+
+### 三、验收结果
+
+- `node --check`（全部 `src/**` + `tests/**`）通过。
+- `node tests/smoke.js` **20/20**；`node tests/m2m3.js` **58/0/0**；`node tests/fullsuite.js` **63/63**。
+- `tests/fullsuite.js` 新增 §A7（17 项）：B1 用 36 局真实 `startRun()` 采样 99 个出生点复刻圆-矩判定；
+  B2/B3/B4 用真实 `engine.update()` 帧推进；B6 用 DOM stub 真实 `click()`；B7/B8/B9 兼用行为与静态契约。
+- 一次性 Edge 无头 `file://` 实拍 4 张（`hud / pause / perk / unlock`）：HUD 紧凑半透明不挡视野、
+  暂停面板三按钮齐备无重叠、词条卡三列且无 `p_xxx`、解锁页顶部 × 可见。
+  **零端口占用、零后台进程、跑完即退**（已核实无残留 `msedge` 进程、无本地监听端口）。
+
+### 四、不变量与未动区域
+
+- `tests/smoke.js` 20/20 冻结基线未改；`core/perks.js` 前 10 个词条派生数值逐字未动。
+- `BULLET_DMG / FIRE_CD / SPEED / DASH_* / HURT_INVULN` 等基础手感常量全部保持 v1。
+- `BALANCE.hpBase / hpProgress / bossHpMul` 未动 —— 4 分钟节奏校准旋钮留待真人计时后再调。
+- M1–M6 / N1 全部存档，未新建科技树 / 存档 / 掉落物 / 商店 / 可破坏墙体等系统。

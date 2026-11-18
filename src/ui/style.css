@@ -43,18 +43,23 @@ canvas{display:block;width:100%;height:100%}
 .hidden{display:none !important}
 
 /* ---------- HUD ---------- */
+/* B5：顶部 HUD 紧凑化 + 半透明渐变，把上方视野还给画布。
+ * HUD 本身不吃鼠标，只有交互控件重新放行，避免遮挡瞄准。 */
 .hud{
-  position:absolute;top:0;left:0;right:0;display:flex;gap:22px;
-  padding:14px 20px 16px;align-items:flex-start;
-  background:rgba(9,12,20,.82);border-bottom:1px solid var(--line);
-  backdrop-filter:blur(10px);z-index:3;
+  position:absolute;top:0;left:0;right:0;display:flex;gap:16px;
+  padding:7px 16px 9px;align-items:flex-start;
+  background:linear-gradient(180deg,rgba(9,12,20,.62),rgba(9,12,20,.22));
+  border-bottom:1px solid rgba(var(--teal-rgb),.16);
+  backdrop-filter:blur(4px);z-index:3;
+  pointer-events:none;
 }
+.hud button,.hud .mini-btn{pointer-events:auto}
 .hud-left{width:190px;flex:none}
-.brand-mini{font-size:15px;font-weight:600;letter-spacing:2px;color:var(--teal)}
-.room-line{display:flex;align-items:baseline;gap:8px;margin-top:4px}
+.brand-mini{font-size:13px;font-weight:600;letter-spacing:2px;color:var(--teal)}
+.room-line{display:flex;align-items:baseline;gap:8px;margin-top:2px}
 .room-line b{font-size:16px;font-weight:500}
 .room-line span{font-size:11px;color:var(--muted)}
-.dots{display:flex;gap:5px;margin-top:9px;align-items:center}
+.dots{display:flex;gap:5px;margin-top:5px;align-items:center}
 .dot{width:16px;height:4px;border-radius:2px;background:rgba(255,255,255,.13)}
 .dot.done{background:var(--teal)}
 .dot.now{background:var(--amber);box-shadow:0 0 8px rgba(var(--amber-rgb),.6)}
@@ -68,16 +73,16 @@ canvas{display:block;width:100%;height:100%}
 .hp-track{flex:1;max-width:300px;height:9px;border-radius:6px;background:rgba(255,255,255,.10);overflow:hidden}
 .hp-fill{height:100%;width:100%;background:var(--teal);border-radius:6px;transition:width .16s ease}
 .hp-fill.low{background:var(--rust)}
-.boss-bar{display:flex;align-items:center;gap:9px;margin-top:9px}
+.boss-bar{display:flex;align-items:center;gap:9px;margin-top:5px}
 .boss-bar span{font-size:11px;color:var(--rust);min-width:32px}
 .boss-track{flex:1;height:5px;background:rgba(255,255,255,.09);border-radius:4px;overflow:hidden}
 .boss-fill{height:100%;background:var(--rust);transition:width .2s ease}
-.hint{margin-top:9px;font-size:11px;color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.hud-right{width:230px;flex:none;display:flex;flex-direction:column;align-items:flex-end;gap:7px}
+.hint{margin-top:5px;font-size:11px;color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.hud-right{width:230px;flex:none;display:flex;flex-direction:column;align-items:flex-end;gap:5px}
 .hud-stats{display:flex;gap:12px;font-size:11px;color:var(--muted);font-family:var(--mono)}
 .hud-stats b{color:var(--text);font-weight:500}
 .hud-stats .src{color:var(--teal);opacity:.8}
-.chips{display:flex;flex-wrap:wrap;gap:4px;justify-content:flex-end;max-height:42px;overflow:hidden}
+.chips{display:flex;flex-wrap:wrap;gap:4px;justify-content:flex-end;max-height:30px;overflow:hidden}
 .chip{font-size:10px;padding:2px 7px;border-radius:20px;border:1px solid var(--line);color:var(--muted);white-space:nowrap}
 .chip.r-common{border-color:rgba(255,255,255,.16)}
 .chip.r-rare{border-color:rgba(var(--violet-rgb),.5);color:var(--violet-soft)}
@@ -147,7 +152,7 @@ kbd{font-family:var(--mono);font-size:10px;padding:4px 8px;border-radius:5px;
 .perk-tag{font-size:10px;color:var(--dim)}
 .perk-name{font-size:22px;font-weight:500;letter-spacing:1px}
 .perk-desc{font-size:12px;color:var(--muted);line-height:1.6;flex:1}
-.perk-id{font-family:var(--mono);font-size:10px;color:var(--dim)}
+/* B8：词条卡底部不再渲染英文函数 id（.perk-id 规则已移除） */
 .perk-price{font-size:11px;color:var(--teal);border-top:1px solid var(--line);padding-top:8px}
 .perk-card.locked{opacity:.55;cursor:default}
 .perk-card.locked:hover{transform:none;border-color:var(--line);box-shadow:none}
@@ -168,6 +173,15 @@ kbd{font-family:var(--mono);font-size:10px;padding:4px 8px;border-radius:5px;
 
 .unlock-panel{width:min(760px,100%)}
 .unlock-head{display:flex;justify-content:space-between;align-items:flex-start;gap:20px;margin-bottom:20px}
+/* B6：顶部关闭按钮，解锁页不必滚到底部才能退出 */
+.unlock-head-right{display:flex;align-items:center;gap:10px;flex:none}
+.icon-btn{
+  width:32px;height:32px;flex:none;border-radius:8px;cursor:pointer;
+  border:1px solid var(--line);background:var(--panel-2);color:var(--muted);
+  font-size:18px;line-height:1;font-family:var(--mono);
+  transition:color .16s ease,border-color .16s ease,transform .16s ease;
+}
+.icon-btn:hover{color:var(--text);border-color:var(--teal);transform:translateY(-2px)}
 .wallet{font-family:var(--mono);font-size:12px;color:var(--muted);white-space:nowrap;
   border:1px solid var(--line);border-radius:8px;padding:8px 12px}
 .wallet b{color:var(--amber);font-size:16px}
@@ -175,6 +189,10 @@ kbd{font-family:var(--mono);font-size:10px;padding:4px 8px;border-radius:5px;
 .unlock-grid .perk-card{min-height:132px;padding:13px;gap:6px}
 .unlock-grid .perk-name{font-size:17px}
 .unlock-grid .perk-desc{font-size:11px}
+
+/* B9：Esc 暂停面板 */
+.pause-panel{width:min(480px,100%)}
+.pause-actions{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:4px}
 
 .toast{
   position:absolute;left:50%;bottom:22px;transform:translate(-50%,10px);z-index:6;
