@@ -119,6 +119,12 @@ kbd{font-family:var(--mono);font-size:10px;padding:4px 8px;border-radius:5px;
   border:1px solid var(--line);background:var(--panel-2);color:var(--text);min-width:74px;text-align:center}
 .start-actions,.end-actions{display:flex;gap:10px;align-items:center}
 .start-actions{flex-wrap:wrap}
+.start-panel{padding-block:26px}
+.start-panel .mark{margin-bottom:12px}
+.start-panel .tagline{margin:14px 0 16px}
+.start-panel .rules{padding-block:12px;margin-bottom:15px}
+.start-panel .footnote{margin-top:14px}
+.impact-actions{margin-bottom:10px}
 .legacy-actions{margin-top:10px}
 .recall-layout{display:flex;gap:8px;align-items:center;color:var(--muted);font-size:12px}
 .recall-layout select{
@@ -222,7 +228,7 @@ kbd{font-family:var(--mono);font-size:10px;padding:4px 8px;border-radius:5px;
 }
 
 /* ---------- 开局主题选择 / HUD 主题标签 ---------- */
-.theme-picker{margin:0 0 20px;border-top:1px solid var(--line);padding-top:18px}
+.theme-picker{margin:0 0 16px;border-top:1px solid var(--line);padding-top:14px}
 .theme-picker-label{font-size:11px;color:var(--muted);letter-spacing:1px;margin-bottom:10px}
 .theme-picker-label span{font-family:var(--mono);font-size:9px;color:var(--dim);letter-spacing:2px;margin-left:6px}
 .theme-options{display:flex;gap:8px;flex-wrap:wrap}

@@ -110,7 +110,7 @@
     switch (type) {
       case 'runStart':
         screens.show(null);
-        if (p.prototype) break;
+        if (p.prototype || p.impact) break;
         screens.toast('第 ' + p.runIndex + ' 局 · ' + (p.source === 'fallback' ? '离线关卡模板' : 'AI 生成关卡'), 2200);
         break;
       case 'roomEnter': {
@@ -147,7 +147,7 @@
         toastBossPhase(p);
         break;
       case 'perkOffer':
-        screens.showPerk(p.choices, p.nextIsBoss, p.prototype);
+        screens.showPerk(p.choices, p.nextIsBoss, p.prototype, p.impact);
         break;
       case 'perkPicked':
         screens.toast('获得「' + p.def.name + '」· ' + p.def.desc, 2000);
@@ -164,25 +164,33 @@
     }
   }
 
-  async function begin(variant) {
+  async function begin(mode) {
     paused = true;                 // 重建 state 期间冻结主循环，避免跑上一局残帧
     audio.resume();
+    screens.dismissToast();
     screens.show(null);
     var themeId = activeThemeId();
     applyAppDataTheme(themeId);        // 每次开局刷新，覆盖切主题后的重开
-    var s = await engine.startRun({ onEvent: onEvent, theme: themeId, prototype: variant });
-    if (s.prototype) screens.updateHud(s);
+    input.attackPressed = false;
+    if (mode && mode.impactWeapon) {
+      held = {};
+      input.aimX = input.aimY = null;
+    }
+    var s = await engine.startRun(Object.assign({ onEvent: onEvent, theme: themeId }, mode));
+    if (s.prototype || s.impact) screens.updateHud(s);
     paused = false;                /* B9：无论从暂停菜单 / 结算页 / 开始页进来，新局都不残留暂停态 */
   }
 
   function restart() {
     var s = engine.getState();
-    return begin(s && s.prototype);
+    if (s && s.impact) return begin({ impactWeapon: s.impact.weapon, impactCombinations: s.impact.combinations });
+    return begin(s && { prototype: s.prototype });
   }
 
   /* B9：统一的暂停开关 —— 暂停时打开面板，继续时收起面板 */
   function setPaused(v) {
     paused = !!v;
+    input.attackPressed = false;
     screens.show(paused ? 'pause' : null);
     if (!paused) screens.toast('继续', 1400);
   }
@@ -199,6 +207,7 @@
     if (!paused && !blocking) {
       syncInput();
       var s = engine.update(dt, input);
+      if (dt > 0) input.attackPressed = false;
       render.draw(ctx, s, clock);
       screens.updateHud(s);
     } else {
@@ -221,7 +230,9 @@
 
     screens.init({
       onStart: begin,
-      onRecall: begin,
+      onRecall: function (variant) { begin({ prototype: variant }); },
+      onImpact: function (weapon) { begin({ impactWeapon: weapon }); },
+      onImpactCombinations: function (weapon) { begin({ impactWeapon: weapon, impactCombinations: true }); },
       onRestart: restart,
       onPick: function (id) { if (engine.choosePerk(id)) screens.show(null); },
       onUnlock: function (id) {
@@ -239,6 +250,7 @@
       onResume: function () { setPaused(false); },
       onHome: function () {
         paused = true;               // 开始页期间不推进引擎
+        screens.dismissToast();
         screens.show('start');
       }
     });
@@ -248,6 +260,7 @@
       if (e.target && e.target.tagName === 'SELECT') return;
       var k = e.key.toLowerCase();
       held[k] = true;
+      if (!e.repeat && (k === ' ' || k === 'j') && !paused && !screens.current()) input.attackPressed = true;
       if ([' ', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright'].indexOf(k) !== -1) e.preventDefault();
       if (k === 'm') {
         var m = !audio.isMuted(); audio.setMuted(m); screens.setMuted(m);
@@ -268,14 +281,21 @@
       if ((k === 'r' || k === 'enter') && !e.repeat && e.target && e.target.tagName !== 'BUTTON' && !document.getElementById('screen-end').classList.contains('hidden')) restart();
     });
     window.addEventListener('keyup', function (e) { held[e.key.toLowerCase()] = false; });
-    window.addEventListener('blur', function () { held = {}; });
+    window.addEventListener('blur', function () { held = {}; input.attackPressed = false; });
 
     canvas.addEventListener('mousemove', function (e) {
       var p = toWorld(e);
       input.aimX = p.x; input.aimY = p.y;
     });
     canvas.addEventListener('mousedown', function (e) {
-      if (e.button === 0) { held.mouse = true; audio.resume(); }
+      if (e.button !== 0) return;
+      held.mouse = true;
+      if (!paused && !screens.current()) {
+        var p = toWorld(e);
+        input.aimX = p.x; input.aimY = p.y;
+        input.attackPressed = true;
+      }
+      audio.resume();
     });
     window.addEventListener('mouseup', function () { held.mouse = false; });
     canvas.addEventListener('contextmenu', function (e) { e.preventDefault(); });

@@ -46,8 +46,18 @@
           <div><kbd>Shift</kbd><span>冲刺（短暂无敌）</span></div>
           <div><kbd>Esc</kbd><span>暂停 / 返回</span></div>
         </div>
+        <div class="start-actions impact-actions">
+          <label class="recall-layout" for="impact-weapon">武器
+            <select id="impact-weapon">
+              <option value="blade">重刃 · 近战</option>
+              <option value="cannon">手炮 · 远程</option>
+            </select>
+          </label>
+          <button id="btn-impact" class="btn primary" type="button">试玩击飞接力 <span>→</span></button>
+          <button id="btn-impact-combinations" class="btn ghost" type="button">试玩碰撞组合</button>
+        </div>
         <div class="start-actions">
-          <button id="btn-recall" class="btn primary" type="button">试玩廊道回扫 <span>→</span></button>
+          <button id="btn-recall" class="btn ghost" type="button">试玩廊道回扫</button>
           <label class="recall-layout">试玩站位
             <select id="recall-layout">
               <option value="A">A</option>
@@ -120,6 +130,7 @@
 <script src="src/core/perks.js"></script>
 <script src="src/core/audio.js"></script>
 <script src="src/core/recall.js"></script>
+<script src="src/core/impact.js"></script>
 <script src="src/core/engine.js"></script>
 <script src="src/theme/index.js"></script>
 <script src="src/gen/templates.js"></script>
