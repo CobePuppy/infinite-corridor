@@ -16,6 +16,11 @@
 本项目不会启动或占用任何端口 / 后台进程。
 进度（金币、已解锁词条、最佳时长）存 `localStorage`，断网可玩。
 
+开始页的 **试玩廊道回扫** 包含一间普通房和一场首领战。选好词条后，从标记廊口出发，沿一条廊去，
+从另一条廊回来。回扫从返程廊道开始，沿刚走过的廊道倒着传播。试玩站位 A 的炮台在下廊，站位 B
+在同一张图的上廊。走到清房后的右侧光环进入首领战，用回扫打破巡廊者的护盾。试玩结算独立于原版的
+金币和解锁存档。**进入原版长局** 继续使用原有的关卡和词条。
+
 游戏本身不需要 Node；下方的**验收脚本**需要 Node（零依赖，无需 `npm install`，无构建步骤）。
 
 ## 操作
@@ -159,6 +164,7 @@ corridor/
 node tests/smoke.js       # M1 基线：必须保持 20/20，严禁改动该文件
 node tests/m2m3.js        # M2/M3/M4 验收资产：期望 0 failed / 0 waiting
 node tests/fullsuite.js   # M5「全套」跨层接线 + 节奏量化：期望 0 failed
+node --test tests/recall.js # 廊道回扫、站位 A/B、首领和重开
 ```
 
 `tests/m2m3.js` 覆盖：① LLM 默认关闭 / 离线 fallback；② 未配置 / 超时 / 非法或纯文本 JSON /
@@ -167,7 +173,7 @@ schema 校验失败四类降级均返回 `source='fallback'`；③ **6 模板 ×
 AI/生成/模型/LLM/token 禁用词；⑤ geometry 结果不回归。
 其中「超时」场景会真实等待约 8 秒以走通 `AbortController` 降级链路，属正常耗时。
 
-`tests/fullsuite.js` 用轻量 DOM stub 按 `index.html` 顺序加载全部 11 个脚本，验证
+`tests/fullsuite.js` 用轻量 DOM stub 按 `index.html` 顺序加载入口脚本，验证
 协同提示 / 三选一词条卡 / `roomEvent` / HUD 主题同步等跨层接线（§A），并按
 `calibrate()` 同一公式采样 96 局给出**可复算的单局时长模型**、用真实 `engine.update()`
 帧循环验证 6–8 房 + Boss 两阶段状态机可达（§B）。全程纯 Node，**不起端口、不起后台进程**。

@@ -26,7 +26,7 @@
         <div id="hint" class="hint"></div>
       </div>
       <div class="hud-right">
-        <div class="hud-stats"><span>金币 <b id="gold">0</b></span><span>用时 <b id="timer">0.0s</b></span><span class="src" id="source">离线模板</span></div>
+        <div class="hud-stats"><span id="run-gold">金币 <b id="gold">0</b></span><span>用时 <b id="timer">0.0s</b></span><span class="src" id="source">离线模板</span></div>
         <div id="perk-chips" class="chips"></div>
         <button id="btn-mute" class="mini-btn" type="button">音效 开</button>
       </div>
@@ -47,15 +47,24 @@
           <div><kbd>Esc</kbd><span>暂停 / 返回</span></div>
         </div>
         <div class="start-actions">
-          <button id="btn-start" class="btn primary" type="button">进入回廊 <span>→</span></button>
+          <button id="btn-recall" class="btn primary" type="button">试玩廊道回扫 <span>→</span></button>
+          <label class="recall-layout">试玩站位
+            <select id="recall-layout">
+              <option value="A">A</option>
+              <option value="B">B</option>
+            </select>
+          </label>
+        </div>
+        <div class="start-actions legacy-actions">
+          <button id="btn-start" class="btn ghost" type="button">进入原版长局</button>
           <button id="btn-unlock-start" class="btn ghost" type="button">局外解锁</button>
         </div>
-        <p class="footnote">打开即玩 · 断网可玩 · 进度存本地 · 每局关卡由 6 套离线模板轮换</p>
+        <p class="footnote">打开即玩 · 断网可玩 · 原版进度存本地</p>
       </section>
 
       <section id="screen-perk" class="panel perk-panel hidden">
         <div class="panel-kicker" id="perk-room">第 1 间 通过</div>
-        <h2 class="panel-title">选择一条路径</h2>
+        <h2 class="panel-title" id="perk-title">选择一条路径</h2>
         <p class="panel-desc" id="perk-sub">选一个带进下一间房</p>
         <div id="perk-cards" class="perk-cards"></div>
       </section>
@@ -64,10 +73,11 @@
         <h2 id="end-title" class="end-title lose">这次停在了这里</h2>
         <p id="end-summary" class="end-summary"></p>
         <div id="end-stats" class="stats"></div>
-        <p class="end-gold">持有金币 <b id="end-gold">0</b></p>
+        <p id="end-wallet" class="end-gold">持有金币 <b id="end-gold">0</b></p>
         <div class="end-actions">
           <button id="btn-restart" class="btn primary" type="button">再来一局 <span>↻</span></button>
           <button id="btn-unlock" class="btn ghost" type="button">局外解锁</button>
+          <button id="btn-end-home" class="btn ghost hidden" type="button">返回开始页</button>
         </div>
         <p class="footnote">按 R 或 Enter 也可立刻重开</p>
       </section>
@@ -109,6 +119,7 @@
 <script>window.Corridor = window.Corridor || {};</script>
 <script src="src/core/perks.js"></script>
 <script src="src/core/audio.js"></script>
+<script src="src/core/recall.js"></script>
 <script src="src/core/engine.js"></script>
 <script src="src/theme/index.js"></script>
 <script src="src/gen/templates.js"></script>

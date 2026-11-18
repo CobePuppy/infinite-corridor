@@ -50,6 +50,14 @@
 
   var IDS = Object.keys(TABLE);
   var RARITY_LABEL = { common: '普通', rare: '稀有', epic: '史诗' };
+  var RECALL = {
+    p_recall_corner: {
+      name: '折角扩散', rarity: 'rare', tag: '折角', desc: '回扫出折角后短暂变宽，能扫到廊道边缘。'
+    },
+    p_recall_distance: {
+      name: '长程蓄力', rarity: 'rare', tag: '长圈', desc: '绕经下廊组成长圈（总路程至少 1850），回扫伤害从 26 提升到 44。'
+    }
+  };
 
   /* ---- T28 集成修复：UI 展示元数据（表外注入，冻结区字面值一行未动） ----
    * ① 冻结契约 C1：前 10 个词条的 id/name/desc/rarity/max/tag 与 derive() 派生数值
@@ -101,7 +109,12 @@
     comboWindow: 1.5, comboStep: 5, popLife: 0.7,
     /* 各钩子冷却/系数 */
     dashHitCd: 0.35, satHitCd: 0.4, dashTrailCd: 0.12, dashTrailMul: 0.6,
-    spread: 0.16
+    spread: 0.16,
+    recall: {
+      speed: 860, width: 30, damage: 26,
+      cornerWidth: 57, cornerDistance: 96, longDistance: 1850, longDamage: 44,
+      guardWindow: 3.3, bossHp: 224, bossDamage: 8, patrolSpeed: 132
+    }
   };
 
   function stacks(state, id) { return (state.perks && state.perks[id]) || 0; }
@@ -270,7 +283,7 @@
   C.core = C.core || {};
   C.core.perks = {
     TABLE: TABLE, IDS: IDS, RARITY_LABEL: RARITY_LABEL, RARITY_RANK: RARITY_RANK,
-    BALANCE: BALANCE,
+    BALANCE: BALANCE, RECALL: RECALL,
     stacks: stacks, canOffer: canOffer, add: add, derive: derive, on: on,
     synergies: synergies,
     /* T28：UI 展示接口（不参与规则运算） */

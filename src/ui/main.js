@@ -110,6 +110,7 @@
     switch (type) {
       case 'runStart':
         screens.show(null);
+        if (p.prototype) break;
         screens.toast('第 ' + p.runIndex + ' 局 · ' + (p.source === 'fallback' ? '离线关卡模板' : 'AI 生成关卡'), 2200);
         break;
       case 'roomEnter': {
@@ -146,7 +147,7 @@
         toastBossPhase(p);
         break;
       case 'perkOffer':
-        screens.showPerk(p.choices, p.nextIsBoss);
+        screens.showPerk(p.choices, p.nextIsBoss, p.prototype);
         break;
       case 'perkPicked':
         screens.toast('获得「' + p.def.name + '」· ' + p.def.desc, 2000);
@@ -163,14 +164,20 @@
     }
   }
 
-  async function begin() {
+  async function begin(variant) {
     paused = true;                 // 重建 state 期间冻结主循环，避免跑上一局残帧
     audio.resume();
     screens.show(null);
     var themeId = activeThemeId();
     applyAppDataTheme(themeId);        // 每次开局刷新，覆盖切主题后的重开
-    await engine.startRun({ onEvent: onEvent, theme: themeId });
+    var s = await engine.startRun({ onEvent: onEvent, theme: themeId, prototype: variant });
+    if (s.prototype) screens.updateHud(s);
     paused = false;                /* B9：无论从暂停菜单 / 结算页 / 开始页进来，新局都不残留暂停态 */
+  }
+
+  function restart() {
+    var s = engine.getState();
+    return begin(s && s.prototype);
   }
 
   /* B9：统一的暂停开关 —— 暂停时打开面板，继续时收起面板 */
@@ -214,8 +221,9 @@
 
     screens.init({
       onStart: begin,
-      onRestart: begin,
-      onPick: function (id) { engine.choosePerk(id); screens.show(null); },
+      onRecall: begin,
+      onRestart: restart,
+      onPick: function (id) { if (engine.choosePerk(id)) screens.show(null); },
       onUnlock: function (id) {
         var from = document.getElementById('unlock-back').dataset.from;
         var r = engine.unlock(id);
@@ -237,13 +245,14 @@
     screens.setMuted(audio.isMuted());
 
     window.addEventListener('keydown', function (e) {
+      if (e.target && e.target.tagName === 'SELECT') return;
       var k = e.key.toLowerCase();
       held[k] = true;
       if ([' ', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright'].indexOf(k) !== -1) e.preventDefault();
       if (k === 'm') {
         var m = !audio.isMuted(); audio.setMuted(m); screens.setMuted(m);
       }
-      if (k === 'escape') {
+      if (k === 'escape' && !e.repeat) {
         /* B7：Esc 语义按当前弹窗分流，杜绝「解锁页 / 词条页里叠加暂停」的冲突。
          *  - 解锁页 → 返回（等同顶部 × / 底部「返回」）
          *  - 暂停面板 → 继续
@@ -256,7 +265,7 @@
         else if (cur === 'start' || cur === 'end') { /* 不叠加暂停 */ }
         else setPaused(!paused);
       }
-      if ((k === 'r' || k === 'enter') && e.target && e.target.tagName !== 'BUTTON' && !document.getElementById('screen-end').classList.contains('hidden')) begin();
+      if ((k === 'r' || k === 'enter') && !e.repeat && e.target && e.target.tagName !== 'BUTTON' && !document.getElementById('screen-end').classList.contains('hidden')) restart();
     });
     window.addEventListener('keyup', function (e) { held[e.key.toLowerCase()] = false; });
     window.addEventListener('blur', function () { held = {}; });
