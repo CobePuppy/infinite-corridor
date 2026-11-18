@@ -458,15 +458,16 @@
   function startImpact(opts) {
     var rules = C.core.impact;
     var weapon = rules.hasWeapon(opts.impactWeapon) ? opts.impactWeapon : 'blade';
+    var trial = opts.impactTrial ? C.core.enemyTrial.create(opts.impactTrial.version, opts.impactTrial.preset) : null;
     var room = { name: '接力直廊', color_token: 'teal' };
     var run = { theme: C.theme.get(opts.theme).id, rooms: [room] };
     state = createState(run, []);
     state.room = room;
-    state.walls = border().concat(rules.walls);
-    if (opts.impactCombinations) state.walls.push(rules.shortWall);
+    state.walls = border().concat(trial ? C.core.enemyTrial.walls : rules.walls);
+    if (opts.impactCombinations && !trial) state.walls.push(rules.shortWall);
     state.transition = 0;
     state.onEvent = opts.onEvent || null;
-    rules.start(state, weapon, !!opts.impactCombinations, impactGame);
+    rules.start(state, weapon, !!opts.impactCombinations || !!trial, trial, impactGame);
     A('start');
     emit(state, 'runStart', { impact: true });
     return state;

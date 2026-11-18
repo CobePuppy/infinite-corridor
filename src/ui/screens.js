@@ -12,23 +12,20 @@
   var currentScreen = 'start';   /* B7：main.js 需按当前弹窗决定 Esc 语义 */
 
   function show(name) {
-    ['start', 'perk', 'end', 'unlock', 'pause'].forEach(function (n) {
+    var previous = currentScreen;
+    ['start', 'trial', 'loading', 'perk', 'end', 'unlock', 'pause'].forEach(function (n) {
       var el = $('screen-' + n);
       if (el) el.classList.toggle('hidden', n !== name);
     });
     var overlay = $('overlay');
     overlay.classList.toggle('hidden', !name);
-    overlay.classList.toggle('dim', !!name && name !== 'perk');
-    overlay.classList.toggle('unlocking', name === 'unlock');
-    $('hud').classList.toggle('hidden', name === 'start' || name === 'unlock');
-    $('btn-pause').disabled = !!name;
-    if (currentScreen !== name) {
-      var focusIds = { start: 'btn-start', pause: 'btn-resume', unlock: 'unlock-close', end: 'btn-restart' };
-      var focus = name === 'perk' ? $('perk-cards').querySelector('button:not(:disabled)') :
-        $(name ? focusIds[name] : 'game');
-      if (focus && focus.focus) focus.focus({ preventScroll: true });
-    }
+    $('stage').dataset.screen = name || 'playing';
+    var hud = $('hud');
+    hud.classList.toggle('hidden', !!name && name !== 'pause' && name !== 'perk');
+    hud.inert = !!name;
     currentScreen = name || null;
+    var target = $(name ? 'screen-' + name : 'game');
+    if (previous !== currentScreen && target && target.focus) target.focus({ preventScroll: true });
   }
 
   /* 当前打开的弹窗名（null = 无弹窗、正在游戏中）。供 main.js 的 Esc / 主循环判定。 */
@@ -159,7 +156,7 @@
       var row = (synTable && typeof synTable === 'object') ? synTable[id] : null;
       if (row) partners = partners.concat(toIdList(row));
 
-      var matched = partners.filter(function (pid) { return owned.indexOf(pid) !== -1 && TABLE[pid] && TABLE[pid].name; });
+      var matched = partners.filter(function (pid) { return owned.indexOf(pid) !== -1; });
 
       // ③ 可选提示文本字段
       var note = textOf(def.synergyHint || def.synergyText || def.comboHint || def.comboNote ||
@@ -167,7 +164,7 @@
         (row && typeof row === 'object' ? row : null));
 
       if (matched.length) {
-        var names = matched.map(function (pid) { return TABLE[pid].name; });
+        var names = matched.map(function (pid) { return (TABLE[pid] || {}).name || pid; });
         return '协同 · 已持有「' + names.join('、') + '」' + (note ? ' · ' + note : '');
       }
       return ''; // 无协同关系 / 接口缺失 → 不渲染，避免刷屏
@@ -195,31 +192,15 @@
     });
   }
 
-  function injectHudTheme() {
-    if ($('hud-theme')) return;
-    var stats = document.querySelector('.hud-right .hud-stats');
-    if (!stats) return;
-    var tag = document.createElement('span');
-    tag.className = 'theme-tag';
-    tag.innerHTML = '<span class="theme-tag-k">主题</span> <b id="hud-theme"></b>';
-    /* T28：主题标签独占一行。原先 append 进 .hud-stats 会与「金币 / 用时 / 来源」
-     * 挤在 230px 宽度里，中文被折成多行、右上角排版错乱（浏览器实拍确认）。 */
-    var parent = stats.parentNode;
-    if (!parent) return;
-    if (stats.nextSibling) parent.insertBefore(tag, stats.nextSibling);
-    else parent.appendChild(tag);
-  }
-
   function buildThemePicker() {
-    var start = $('screen-start');
-    var actions = start && start.querySelector('.start-actions');
-    if (!actions || $('theme-picker')) return;
+    var host = $('theme-host');
+    if (!host || $('theme-picker')) return;
     var wrap = document.createElement('div');
     wrap.id = 'theme-picker';
     wrap.className = 'theme-picker';
     var head = document.createElement('div');
     head.className = 'theme-picker-label';
-    head.innerHTML = '选择主题 <span>THEME</span>';
+    head.textContent = '主题';
     wrap.appendChild(head);
     var opts = document.createElement('div');
     opts.className = 'theme-options';
@@ -235,25 +216,21 @@
       opts.appendChild(b);
     });
     wrap.appendChild(opts);
-    start.insertBefore(wrap, actions);
+    host.appendChild(wrap);
   }
 
   function perkDefinition(id) {
-    if (typeof id !== 'string') return null;
     var perks = C.core.perks;
-    var tables = [perks.TABLE, perks.RECALL, perks.IMPACT];
-    var table = tables.find(function (entry) { return entry && Object.prototype.hasOwnProperty.call(entry, id); });
-    var def = table && table[id];
-    return def && typeof def.name === 'string' && def.name ? def : null;
+    return [perks.TABLE, perks.RECALL, perks.IMPACT].reduce(function (found, table) {
+      return found || (Object.prototype.hasOwnProperty.call(table, id) ? table[id] : null);
+    }, null);
   }
 
   function perkCard(id, opts) {
     opts = opts || {};
-    var RL = C.core.perks.RARITY_LABEL;
-    var impact = C.core.perks.IMPACT[id];
     var def = perkDefinition(id);
-    if (!def) return null;
-    var rarityLabel = impact ? '构筑点 ×1' : (RL[def.rarity] || '');
+    var impact = Object.prototype.hasOwnProperty.call(C.core.perks.IMPACT, id);
+    var rarityLabel = impact ? '专精' : (C.core.perks.RARITY_LABEL[def.rarity] || '');
     var d = document.createElement('button');
     d.className = 'perk-card ' + rarityClass(def.rarity) + (opts.locked ? ' locked' : '');
     d.type = 'button';
@@ -261,7 +238,7 @@
       '<div class="perk-top"><span class="perk-rarity">' + esc(rarityLabel) + '</span>' +
       '<span class="perk-tag">' + esc(def.tag || '') + '</span>' +
       mechanicBadge(def) + '</div>' +
-      '<div class="perk-name">' + esc(def.name) + '</div>' +
+      '<div class="perk-name">' + esc(def.name || id) + '</div>' +
       '<div class="perk-desc">' + esc(def.desc || '') + '</div>' +
       synergyBlock(opts.synergy) +
       (opts.footer || '');
@@ -274,6 +251,21 @@
   function showPerk(choices, nextIsBoss, prototype, impact) {
     var box = $('perk-cards');
     var list = Array.isArray(choices) ? choices.filter(perkDefinition) : [];
+    if (!list.length) {
+      box.innerHTML = '';
+      box.dataset.count = '1';
+      $('perk-room').textContent = '';
+      $('perk-title').textContent = '词条暂不可用';
+      $('perk-sub').textContent = '返回首页可以重新开始。';
+      var back = document.createElement('button');
+      back.type = 'button';
+      back.className = 'btn secondary';
+      back.textContent = '返回首页';
+      back.addEventListener('click', function () { if (handlers.onHome) handlers.onHome(); });
+      box.appendChild(back);
+      show('perk');
+      return;
+    }
     if (box) {
       box.innerHTML = '';
       /* 供 visual-dev 的 CSS 按候选数布局（可选消费 [data-count]）；M1 下为 2，外观不变 */
@@ -284,22 +276,12 @@
       });
     }
     var st = (C.core && C.core.engine && C.core.engine.getState) ? (C.core.engine.getState() || {}) : {};
-    if (!list.length) {
-      $('perk-room').textContent = '';
-      $('perk-title').textContent = '没有可用词条';
-      $('perk-sub').textContent = '请返回开始页重新进入回廊';
-      var home = document.createElement('button');
-      home.type = 'button';
-      home.className = 'btn primary';
-      home.textContent = '返回开始页';
-      home.addEventListener('click', function () { handlers.onHome && handlers.onHome(); });
-      if (box) box.appendChild(home);
-    } else if (impact) {
+    if (impact) {
       $('perk-room').textContent = '第 1 组已清';
       $('perk-title').textContent = '强化' + C.core.impact.weapons[st.impact.weapon].name;
       $('perk-sub').textContent = '获得 1 个构筑点。选一项强化，迎战下一组。';
     } else {
-      $('perk-title').textContent = prototype ? '选择回扫词条' : '选择一条路径';
+      $('perk-title').textContent = prototype ? '选择回扫词条' : '选择词条';
       $('perk-sub').textContent = prototype ? '选一种效果带入普通房和首领战' :
         (nextIsBoss ? '选完即将进入终室 · 迎接本局的首领' : '选一个带进下一间房 · 效果可叠加');
       $('perk-room').textContent = prototype ? '试玩站位 ' + st.prototype : '第 ' + ((st.roomIndex || 0) + 1) + ' 间 通过';
@@ -307,7 +289,7 @@
     show('perk');
   }
 
-  function updateHud(s) {
+  function updateHud(s, cue) {
     var impact = s && s.impact;
     var hudTheme = $('hud-theme');
     /* T28：实时取当前主题，不再依赖 syncThemeUI() 的缓存值。
@@ -342,11 +324,14 @@
     var p = s.player;
     var ratio = Math.max(0, p.hp / p.maxHp);
     $('hp-fill').style.width = (ratio * 100) + '%';
-    $('hp-text').textContent = Math.max(0, Math.ceil(p.hp)) + ' / ' + p.maxHp;
+    var hp = Math.max(0, Math.ceil(p.hp));
+    $('hp-text').textContent = hp + ' / ' + p.maxHp;
+    $('hp-track').setAttribute('aria-valuenow', hp);
+    $('hp-track').setAttribute('aria-valuemax', p.maxHp);
     $('hp-fill').classList.toggle('low', ratio < 0.3);
     var dash = $('dash-status');
-    dash.textContent = p.dashCd > 0 ? (Math.ceil(p.dashCd * 10) / 10).toFixed(1) + ' 秒' : '可用';
-    dash.classList.toggle('cooling', p.dashCd > 0);
+    dash.textContent = p.dashCd > 0 ? p.dashCd.toFixed(1) + ' 秒' : '可用';
+    dash.classList.toggle('waiting', p.dashCd > 0);
 
     var total = impact ? 2 : s.run.rooms.length;
     var idx = impact ? impact.wave - 1 : Math.min(s.roomIndex, total);
@@ -355,33 +340,41 @@
     $('room-count').textContent = bossRoom ? '终室 · 首领' : '第 ' + (idx + 1) + ' / ' + total + (impact ? ' 组' : ' 间');
 
     var dots = $('room-dots');
-    dots.innerHTML = '';
-    for (var i = 0; i < total; i++) {
-      var d = document.createElement('i');
-      d.className = 'dot' + (i < idx || (impact && s.phase === 'won') ? ' done' : (i === idx ? ' now' : ''));
-      dots.appendChild(d);
-    }
-    if (!impact) {
-      var bossDot = document.createElement('i');
-      bossDot.className = 'dot boss' + (s.phase === 'won' ? ' done' : (bossRoom ? ' now' : ''));
-      dots.appendChild(bossDot);
+    var dotsKey = [total, idx, !!impact, s.phase === 'won'].join(':');
+    if (dots.dataset.progress !== dotsKey) {
+      dots.dataset.progress = dotsKey;
+      dots.innerHTML = '';
+      for (var i = 0; i < total; i++) {
+        var d = document.createElement('i');
+        d.className = 'dot' + (i < idx || (impact && s.phase === 'won') ? ' done' : (i === idx ? ' now' : ''));
+        dots.appendChild(d);
+      }
+      if (!impact) {
+        var bossDot = document.createElement('i');
+        bossDot.className = 'dot boss' + (s.phase === 'won' ? ' done' : (bossRoom ? ' now' : ''));
+        dots.appendChild(bossDot);
+      }
     }
 
     $('gold').textContent = s.gold;
     $('timer').textContent = s.elapsed.toFixed(1) + 's';
 
     var chips = $('perk-chips');
-    chips.innerHTML = '';
     var carried = impact && impact.perk ? [impact.perk] : (s.recallPerk ? [s.recallPerk] : Object.keys(s.perks));
-    carried.forEach(function (id) {
-      var def = perkDefinition(id);
-      if (!def) return;
-      var c = document.createElement('span');
-      c.className = 'chip ' + rarityClass(def.rarity);
-      c.textContent = def.name + (s.perks[id] > 1 ? ' ×' + s.perks[id] : '');
-      c.title = def.desc;
-      chips.appendChild(c);
-    });
+    var chipsKey = carried.map(function (id) { return id + ':' + (s.perks[id] || 1); }).join(',');
+    if (chips.dataset.carried !== chipsKey) {
+      chips.dataset.carried = chipsKey;
+      chips.innerHTML = '';
+      carried.forEach(function (id) {
+        var def = perkDefinition(id);
+        if (!def) return;
+        var c = document.createElement('span');
+        c.className = 'chip ' + rarityClass(def.rarity);
+        c.textContent = def.name + (s.perks[id] > 1 ? ' ×' + s.perks[id] : '');
+        c.title = def.desc;
+        chips.appendChild(c);
+      });
+    }
 
     var boss = s.enemies.filter(function (e) { return e.isBoss; })[0];
     var bw = $('boss-bar');
@@ -394,7 +387,14 @@
     var hint = s.room.path_hint || '';
     if (s.phase === 'won' || s.phase === 'dead') hint = '';
     else if (impact) {
-      if (impact.combinations) hint = impact.awakeAt === Infinity ? '打飞，再松开左键补击一次' : '';
+      if (impact.trial) {
+        hint = '';
+        if (cue) {
+          if (cue.ready) hint = cue.effect === 'fold' ? '松开再按左键 · 侧向补击' : '左键 · 侧击借势';
+          else hint = Math.hypot(p.x - cue.spot.x, p.y - cue.spot.y) < 18 ? '转向标记指向的目标' : '走到青色标记处，寻找侧击角度';
+        }
+      }
+      else if (impact.combinations) hint = impact.awakeAt === Infinity ? '打飞，再松开左键补击一次' : '';
       else if (impact.awakeAt === Infinity) hint = C.core.impact.weapons[impact.weapon].opening;
       else if (impact.wave === 2) hint = C.core.perks.IMPACT[impact.perk].desc;
       else hint = impact.weapon === 'blade' ? '贴近飞行中的敌人，朝新方向再挥一刀' : '换个角度补一枪，改写飞行方向';
@@ -411,24 +411,26 @@
       else if (s.recall.outbound) hint = '从另一条廊回到标记处';
     }
     $('hint').textContent = hint;
+    $('hint').classList.toggle('hint-guide', !!cue);
     $('source').textContent = impact ? C.core.impact.weapons[impact.weapon].name : (s.prototype ? '试玩 ' + s.prototype :
       (s.source === 'fallback' ? '离线模板 #' + ((s.templateIndex || 0) + 1) : 'AI 生成'));
   }
 
   function showEnd(result) {
     var trial = result.prototype || result.impact;
-    $('end-title').textContent = result.cleared ? (result.impact ? '两组敌人已击退' : '走廊走到了尽头') : '这次停在了这里';
+    var state = C.core.engine.getState();
+    $('end-title').textContent = result.cleared ? '通关' : '本局结束';
     $('end-title').className = result.cleared ? 'end-title win' : 'end-title lose';
     $('end-summary').textContent = result.summary || '';
     $('end-stats').innerHTML =
-      stat('存活', result.seconds.toFixed(1) + 's') +
+      stat('战斗用时', result.seconds.toFixed(1) + ' 秒') +
       (result.impact ? stat('通过组数', String(result.waves)) : stat('通过房间', String(result.rooms))) +
       stat('击杀', String(result.kills)) +
       (result.impact && !result.combinations ? stat('最长接力', String(result.bestChain)) :
         (trial ? '' : stat('获得金币', '+' + result.gold)));
     $('end-wallet').classList.toggle('hidden', !!trial);
     $('btn-unlock').classList.toggle('hidden', !!trial);
-    $('btn-end-home').classList.toggle('hidden', !trial);
+    $('btn-end-home').textContent = state && state.impact && state.impact.trial ? '返回单房设置' : '返回首页';
     if (!trial) $('end-gold').textContent = C.core.engine.getMeta().gold;
     show('end');
   }
@@ -441,7 +443,7 @@
     var meta = C.core.engine.getMeta();
     $('unlock-gold').textContent = meta.gold;
     var box = $('unlock-grid');
-    var scrollTop = currentScreen === 'unlock' ? box.scrollTop : 0;
+    var scroll = currentScreen === 'unlock' ? box.scrollTop : 0;
     box.innerHTML = '';
     C.core.perks.IDS.forEach(function (id) {
       var owned = meta.unlocked.indexOf(id) !== -1;
@@ -450,7 +452,6 @@
         noPick: true,
         footer: '<div class="perk-price">' + (owned ? '已解锁 · 开局自带' : '60 金币解锁') + '</div>'
       });
-      if (!card) return;
       if (!owned) {
         card.addEventListener('click', function () { handlers.onUnlock && handlers.onUnlock(id); });
         card.classList.toggle('poor', meta.gold < 60);
@@ -459,18 +460,24 @@
     });
     $('unlock-back').dataset.from = fromEnd ? 'end' : 'start';
     show('unlock');
-    box.scrollTop = scrollTop;
+    box.scrollTop = scroll;
   }
 
   function setMuted(m) {
     var b = $('btn-mute');
     b.textContent = m ? '音效 关' : '音效 开';
     b.classList.toggle('off', m);
+    b.setAttribute('aria-pressed', m ? 'true' : 'false');
   }
 
   function init(h) {
     handlers = h || {};
     $('btn-start').addEventListener('click', function () { handlers.onStart && handlers.onStart(); });
+    $('btn-trial-setup').addEventListener('click', function () { show('trial'); });
+    $('btn-trial-back').addEventListener('click', function () { show('start'); });
+    $('btn-trial-start').addEventListener('click', function () {
+      if (handlers.onTrial) handlers.onTrial($('trial-weapon').value, $('trial-version').value, $('trial-preset').value);
+    });
     $('btn-impact').addEventListener('click', function () { handlers.onImpact && handlers.onImpact($('impact-weapon').value); });
     $('btn-impact-combinations').addEventListener('click', function () {
       if (handlers.onImpactCombinations) handlers.onImpactCombinations($('impact-weapon').value);
@@ -482,13 +489,12 @@
     $('btn-unlock-start').addEventListener('click', function () { showUnlock(false); });
     $('unlock-back').addEventListener('click', backFromUnlock);
     $('unlock-close').addEventListener('click', backFromUnlock);
-    $('btn-pause').addEventListener('click', function () { handlers.onPause && handlers.onPause(); });
     $('btn-mute').addEventListener('click', function () { handlers.onToggleMute && handlers.onToggleMute(); });
+    $('btn-pause').addEventListener('click', function () { handlers.onPause && handlers.onPause(); });
     /* B9：暂停面板三个出口，全部交给 main.js 编排 */
     $('btn-resume').addEventListener('click', function () { handlers.onResume && handlers.onResume(); });
     $('btn-pause-restart').addEventListener('click', function () { handlers.onRestart && handlers.onRestart(); });
     $('btn-pause-home').addEventListener('click', function () { handlers.onHome && handlers.onHome(); });
-    injectHudTheme();
     buildThemePicker();
     syncThemeUI();
     show('start');

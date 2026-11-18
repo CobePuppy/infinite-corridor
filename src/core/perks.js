@@ -142,6 +142,15 @@
         straightBoost: 1.48, foldRadius: 99, foldAngle: 0.92, foldSpeed: 0.75,
         chargeWarning: 1.35, chargeTime: 0.64, chargeRecovery: 1.55,
         chargeSpeed: 290, borrowCarry: 0.42, borrowBoost: 1.22
+      },
+      trial: {
+        firstHp: 54, foldRadius: 128,
+        press: { hp: 66, damage: 8, approach: 95, reach: 65, warning: 0.28, speed: 300,
+          duration: 0.17, recovery: 0.45, landing: 0.18, width: 24, half: 0.5 },
+        flank: { hp: 62, damage: 9, approach: 120, warning: 0.25, speed: 350,
+          duration: 0.42, recovery: 0.35, landing: 0.2, width: 26 },
+        charge: { hp: 78, damage: 13, approach: 238, min: 120, max: 220, warning: 1.2, speed: 350,
+          duration: 0.6, recovery: 0.85, landing: 0.85, width: 27 }
       }
     }
   };

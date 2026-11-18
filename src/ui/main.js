@@ -6,7 +6,7 @@
 
   var canvas, ctx;
   var engine, render, screens, audio;
-  var last = 0, clock = 0, paused = false, starting = false;
+  var last = 0, clock = 0, battleClock = 0, paused = false, starting = false;
   var input = { up: false, down: false, left: false, right: false, fire: false, dash: false, aimX: null, aimY: null };
   var held = {};
 
@@ -180,13 +180,13 @@
     applyAppDataTheme(themeId);
     input.aimX = input.aimY = null;
     try {
-      // 回扫试玩进房会立即打开词条面板。先退出旧面板，让新局决定打开什么。
-      screens.show(null);
+      screens.show('loading');
       var s = await engine.startRun(Object.assign({ onEvent: onEvent, theme: themeId }, mode));
       screens.updateHud(s);
+      battleClock = 0;
       paused = false;
     } catch (e) {
-      screens.show('start');
+      screens.show(mode && mode.impactTrial ? 'trial' : 'start');
       screens.toast('开局失败，请重试');
     } finally {
       starting = false;
@@ -195,7 +195,9 @@
 
   function restart() {
     var s = engine.getState();
-    if (s && s.impact) return begin({ impactWeapon: s.impact.weapon, impactCombinations: s.impact.combinations });
+    if (s && s.impact) return begin({
+      impactWeapon: s.impact.weapon, impactCombinations: s.impact.combinations, impactTrial: s.impact.trial
+    });
     return begin(s && { prototype: s.prototype });
   }
 
@@ -203,8 +205,14 @@
   function setPaused(v) {
     paused = !!v;
     clearInput();
+    if (paused) {
+      var s = engine.getState();
+      var trial = s.impact && s.impact.trial;
+      document.getElementById('pause-context').textContent = s.room.name +
+        (s.impact ? ' · 第 ' + s.impact.wave + ' / 2 组' : '');
+      document.getElementById('btn-pause-home').textContent = trial ? '返回单房设置' : '返回首页';
+    }
     screens.show(paused ? 'pause' : null);
-    if (!paused) screens.toast('继续', 1400);
   }
 
   function loop(ts) {
@@ -214,16 +222,17 @@
     /* B7/B9：暂停或任意弹窗打开时只重绘静止帧、不推进引擎，
      * 避免「弹窗里游戏还在后台跑」以及暂停后 HUD 继续走字。 */
     var cur = screens.current();
-    var blocking = cur === 'start' || cur === 'end' || cur === 'unlock' ||
-                   cur === 'perk' || cur === 'pause';
-    if (!starting && !paused && !blocking) {
+    if (!starting && !paused && !cur) {
+      battleClock += dt;
       syncInput();
       var s = engine.update(dt, input);
       if (dt > 0) input.attackPressed = false;
-      render.draw(ctx, s, clock);
-      screens.updateHud(s);
+      var cue = C.ui.combatGuide.get(s);
+      render.draw(ctx, s, battleClock, null, cue);
+      screens.updateHud(s, cue);
     } else {
-      render.draw(ctx, engine.getState(), clock);
+      var backdrop = cur === 'start' || cur === 'trial' || cur === 'loading' || cur === 'unlock';
+      render.draw(ctx, backdrop ? null : engine.getState(), backdrop ? clock : battleClock);
     }
     requestAnimationFrame(loop);
   }
@@ -245,6 +254,9 @@
       onRecall: function (variant) { begin({ prototype: variant }); },
       onImpact: function (weapon) { begin({ impactWeapon: weapon }); },
       onImpactCombinations: function (weapon) { begin({ impactWeapon: weapon, impactCombinations: true }); },
+      onTrial: function (weapon, version, preset) {
+        begin({ impactWeapon: weapon, impactTrial: { version: version, preset: preset } });
+      },
       onRestart: restart,
       onPick: function (id) {
         if (engine.choosePerk(id)) {
@@ -270,7 +282,8 @@
         paused = true;
         clearInput();
         screens.dismissToast();
-        screens.show('start');
+        var s = engine.getState();
+        screens.show(s && s.impact && s.impact.trial ? 'trial' : 'start');
       }
     });
     screens.setMuted(audio.isMuted());
@@ -278,7 +291,7 @@
     window.addEventListener('keydown', function (e) {
       var k = e.key.toLowerCase();
       var cur = screens.current();
-      if (starting || (e.target && e.target.tagName === 'SELECT')) return;
+      if (starting || (e.target && e.target.tagName === 'SELECT' && k !== 'escape')) return;
       if (k === 'm' && !e.repeat) {
         var m = !audio.isMuted(); audio.setMuted(m); screens.setMuted(m);
       }
@@ -290,6 +303,7 @@
          *  - 开始页 / 结算页 / 词条页 → 不叠加暂停（词条选择不可跳过）
          *  - 无弹窗（游戏中）→ 切换暂停并打开暂停面板 */
         if (cur === 'unlock') screens.backFromUnlock();
+        else if (cur === 'trial') screens.show('start');
         else if (cur === 'pause') setPaused(false);
         else if (cur === 'perk') screens.toast('请先选择一条路径', 1600);
         else if (cur === 'start' || cur === 'end') { /* 不叠加暂停 */ }
@@ -301,6 +315,7 @@
         return;
       }
       if (cur || paused) return;
+      if (k === ' ' && e.target && e.target.tagName === 'BUTTON') return;
       held[k] = true;
       if (!e.repeat && (k === ' ' || k === 'j')) input.attackPressed = true;
       if ([' ', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright'].indexOf(k) !== -1) e.preventDefault();

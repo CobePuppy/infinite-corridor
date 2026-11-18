@@ -195,8 +195,8 @@ function keydown(key, repeat) {
   check('CSS 含 #perk-cards[data-count="3"] 三列规则', css.indexOf('#perk-cards[data-count="3"]') !== -1);
   check('CSS 含 .perk-synergy / .perk-mechanic / .hud-extra',
     css.indexOf('.perk-synergy') !== -1 && css.indexOf('.perk-mechanic') !== -1 && css.indexOf('.hud-extra') !== -1);
-  check('render.js 的 ROOM_LABEL 不含 normal（普通房不常显徽标）',
-    /var ROOM_LABEL\s*=\s*\{[^}]*\}/.test(rjs) && !/var ROOM_LABEL\s*=\s*\{[^}]*normal\s*:/.test(rjs));
+  S.updateHud({ roomType: 'normal' });
+  check('普通房省略类别提示，类别统一放在 HUD', byId('hud-room-type').classList.contains('hidden'));
   check('main.js 含精确 case \'roomEvent\'', mjs.indexOf("case 'roomEvent'") !== -1);
   check('模板数 = 6 套（3 套 M1 冻结 + 3 套新增）', C.gen.templates.TEMPLATES.length === 6,
     '实际 ' + C.gen.templates.TEMPLATES.length);
@@ -276,9 +276,9 @@ function keydown(key, repeat) {
   check('B4 固定炮台朝玩家转动并发射，而不是只停在原地',
     turret.x === 500 && Math.abs(Math.abs(turret.angle) - Math.PI) < 0.01 && hitRun.enemyBullets.length > 0);
 
-  var hudRules = css.match(/\.hud\{([^}]+)\}/)[1];
+  var hudRules = (css.match(/\.hud\s*\{([^}]+)\}/) || [])[1] || '';
   check('B5 HUD 独立排在画布容器之前', html.indexOf('id="hud"') < html.indexOf('class="stage"') &&
-    !hudRules.includes('position:absolute'));
+    !!hudRules && !/position\s*:\s*absolute/.test(hudRules));
 
   S.showUnlock(false);
   byId('unlock-grid').scrollTop = 200;
@@ -324,7 +324,7 @@ function keydown(key, repeat) {
       keydown('Escape');
       nextFrame(1150);
       check('B7 重新加载时按 Esc 不会让旧局继续走帧',
-        S.current() === null && previousRun.elapsed === timeAtRestart);
+        S.current() === 'loading' && previousRun.elapsed === timeAtRestart);
       finishBuild();
       await new Promise(function (resolve) { setTimeout(resolve, 0); });
     } finally {

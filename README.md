@@ -15,10 +15,16 @@
 
 ## 运行
 
+本地 UI 改版快照。打开 `index.html` 进入游戏，页面和两套同帧美术见
+[界面对照](docs/界面对照.html)，试跑方法与结果见 [UI 验收记录](docs/UI验收记录.md)。
+
 **直接双击 `index.html` 即可玩**（纯静态、无构建、无依赖、无 ES module，因此 `file://` 下也能打开）。
 演示、试玩与自动化验收均**不需要本地服务**；如确有需要请自行选择空闲端口并自行管理，
 本项目不会启动或占用任何端口 / 后台进程。
 进度（金币、已解锁词条、最佳时长）存 `localStorage`，断网可玩。
+
+**单房试玩** → 选版本 A / B、重刃 / 手炮、预设 1 / 2 → **进入房间**。WASD 移动、鼠标左键攻击，
+Shift 冲刺，Esc 暂停。暂停内重开会沿用本次设置。 [自测记录](docs/单房自测记录.md)
 
 开始页先选 **重刃** 或 **手炮**，再点 **试玩击飞接力**。用左键把敌人打进后排，也可以对仍在飞的敌人
 补击改向。首组清完获得 1 个构筑点，选一项本武器的强化，在同一条直廊打完第二组。
@@ -176,6 +182,8 @@ node tests/m2m3.js        # M2/M3/M4 验收资产：期望 0 failed / 0 waiting
 node tests/fullsuite.js   # M5「全套」跨层接线 + 节奏量化：期望 0 failed
 node --test tests/recall.js # 廊道回扫、站位 A/B、首领和重开
 node --test tests/impact.js # 近远程击飞、一次加点、墙角与重开
+node --test tests/enemy-trial.js # 单房 A/B、预警、恢复和两种预设
+node --test tests/combat-guide.js # 走位提示、实际出手条件及清除时机
 ```
 
 `tests/m2m3.js` 覆盖：① LLM 默认关闭 / 离线 fallback；② 未配置 / 超时 / 非法或纯文本 JSON /
