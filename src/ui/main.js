@@ -133,7 +133,12 @@
         screens.toast('第 ' + p.runIndex + ' 局 · ' + (p.source === 'fallback' ? '离线关卡模板' : 'AI 生成关卡'), 2200);
         break;
       case 'loopClosed':
-        if (p.streak > 1) screens.toast('连扫 ×' + p.streak + (p.heal ? ' · 归廊 +' + p.heal + ' 生命' : ''), 1500);
+        /* M13：换型提示交给 craftSwitch，这里只报「同型衰减」，避免两个 toast 刷屏。 */
+        if (!p.switched && p.mul && p.mul < 1)
+          screens.toast('同型衰减 · 回扫 ' + p.mul.toFixed(2) + '× · 换个圈型能叠连扫', 1600);
+        break;
+      case 'craftSwitch':
+        screens.toast('换型连扫 ×' + p.streak + ' · ' + p.mul.toFixed(2) + '× · ' + p.label, 1600);
         break;
       /* M11：自由回扫 / 凝滞 / 完美闪避 / 地效 / 连段的界面反馈。
        * 首领房的破盾 toast 由 M9 五个 case 独占，这里不插嘴。 */
@@ -164,8 +169,9 @@
         var now = Date.now();
         if (!shielded && now - lastClosureToast > 1500) {
           lastClosureToast = now;
-          screens.toast('闭环兑现 · ' + p.label + ' ' + (p.length / 1000).toFixed(1) +
-            'k · 连扫 ×' + p.streak + ' · 下圈回扫 ' + p.damage, 1500);
+          screens.toast('闭环兑现 · ' + p.label + ' · ' + (p.effectLabel || '') +
+            ' · 回扫 ' + (p.nextMul || 1).toFixed(2) + '× / ' + p.damage +
+            (p.pierce ? ' · 穿透' : ''), 1600);
         }
         break;
       }

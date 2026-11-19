@@ -791,3 +791,69 @@ M11 用 `tests/freewave.js` 23/23 证明了自由回扫状态机可达，但 §H
 - 盲玩验收包 v2 是**方案与空白模板**，不是验收结论；6–8 人真人盲玩、90 秒成片、
   Qoder Sites 公网地址与作品帖（硬截止 2026/11/30 18:00）仍为待办。
 - 队友在途的提示词 md 文件移动仍未提交、未丢弃；**GitHub 同步 ≠ 大赛提交**。
+
+---
+
+## 附录：M13 圈型策略与凝滞覆盖缺陷验收（2026-11-19 · 开发总监）
+
+### 一、为什么要做这一轮
+
+M12 收口后继续推进本体机制。用工作区一次性真实 WASD 探针（不入库、用后清理）量化
+M11 主模式的收益结构，结论是 `tests/freewave.js` 23/23 的「状态机可达」掩盖了
+**「最优解是原地刷最小圈」**：
+
+| 圈型 | 真实帧耗时 | 伤害 | 单位时间收益 |
+|---|---|---|---|
+| 小圈 | 3.05s | 24 | **7.87 伤害/秒** |
+| 中圈 | 4.87s | 30 | 6.16 伤害/秒 |
+| 大圈 | 9.95s | 52 | 5.23 伤害/秒 |
+
+且 M11 连扫按**闭环次数**累加，连刷同一小圈可滚到 **9.51 伤害/秒**。
+这与 `docs/盲玩验收包.md` S2「第二圈有理由换路」直接冲突：机制上玩家没有换路理由，
+大圈 / 折角圈没有主动使用价值。本轮不改骨架、不换主题，只重立**圈型收益结构**。
+
+### 二、落地清单
+
+| 层 | 改动 |
+|---|---|
+| `src/core/perks.js` | 新增 `BALANCE.free.craft`（`switchStep / switchCap / repeatDecay / repeatFloor / smallCdCut / smallCombo / midHeal / bigCharge / bigStall / bentReach / liveMinPoints`）；**不改** `damage* / area* / streak*`，M11 冻结数值原样 |
+| `src/core/freewave.js` | 新增 `craftKey / craftEffect / craft / live / decayCraft / EFFECT_LABEL`；`create()` 增圈型历史字段；`reset()` 清 `live` 保留历史；`close()` 附带 `craft`。**主效果由面积档决定，折点只作附加穿透**，避免矩形大圈天然带折点永久吃掉「破阵」 |
+| `src/core/engine.js` | `onFreeClosed()` 用 `craft.mul` 统一修正最终伤害（`report()` 传 1 保持 M11 基础语义）；接线 `quick / mend / breach / pierce`；首领房给 `sh.charge += bigCharge`；`FW.decayCraft(f)` 接 26 秒窗口；每帧 `f.live = FW.live(f)`；波结算 `reach` 合并 `f.wave.reach` |
+| `src/core/chrono.js` | **修本体缺陷**：`stall()` 由直接赋值改 `Math.max(c.stall, stallTime)` |
+| `src/ui/render.js` / `screens.js` / `main.js` | `drawFreePath()` 画 `LIVE ... / 换型 ×N / 与上圈同型 / 穿透 / 面积点数未达标`；`drawClosure()` 画效果与倍率；`drawFrame()` 画 `CRAFT ...`；HUD 改真实 `lastCraft.mul` 口径；新增 `craftSwitch` toast 与同型衰减提示 |
+| `tests/loopcraft.js`（新增 8/8） | §J1 规则层 / §J2 `live()` / §J3 真实帧收益结构 / §J4 四圈型效果 + 首领额外蓄势 / §J5 渲染 LIVE 与兑现文字 / §J6 静态接线与 M11 `classify` / `report` 冻结契约 |
+
+### 三、顺带修掉的一处本体缺陷（§J4 首次跑出）
+
+`onFreeClosed()` 兑现瞬间先把凝滞设到 `0.35 + 0.22 = 0.57s`，但**同一帧稍后**回扫波命中敌人
+在波结算里又调一次 `CH.stall(s.chrono)`，而旧 `stall()` 是 `c.stall = 0.35` 直接赋值，
+把大圈的「延长凝滞」覆盖回 0.35s。真人画大圈时同样会被吃掉，不是测试口径问题。
+
+修复：`chrono.stall()` 改为 `Math.max(c.stall, stallTime)`（**仅当 stall 已高于 0.35 时行为
+不同，M11/M12 逐帧语义零变化**）；大圈延长也由 `+=` 改为
+`Math.max(stall, stallTime + bigStall)`，连续两圈大圈不会无限叠时。
+§J4 断言收紧到 `stall >= stallTime + bigStall - 1e-6`，并验证后续波命中不覆盖。
+另修测试自身缺陷：首领房用例的 `onEvent` 是空函数，`measure()` 取不到 `loopClosure` 事件，
+已改为把事件收进 `ctx.events`（**不放宽任何业务断言**）。
+
+### 四、验收（实跑）
+
+| 项 | 结果 |
+|---|---|
+| `node --check` | 7 个改动文件全过 |
+| `node --test tests/loopcraft.js` | **8/8，0 fail** |
+| `node --test tests/*.js` | **128/128，0 fail**（M12 的 120 + 新增 8） |
+| 冻结基线 | `smoke 20/20`、`m2m3 58/0/0`、`fullsuite 78/78`、`loop 29/29`、`freewave 23/23`、`play 5/5` 全部零回归 |
+| 量化复验 | 一次性探针：连刷同型 **5.74** 伤害/秒（24→19→15→12），换型序列 **7.98** 伤害/秒（24→36→73→34）→ **M13 生效：换圈型的单位时间收益高于原地刷同型** |
+| 约束 | 纯 Node + DOM stub + mock 2D 上下文，**零端口、零后台进程、零浏览器配置 / 历史 / 进程 / 端口读取**；一次性探针用后清理、不入仓库 |
+
+### 五、如实标注（本附录不宣称的部分）
+
+- 量化探针的「伤害/秒」是**真实 WASD 帧序列**算出的机制对比，不是真人手感、不是单局时长；
+  玩家是否**看得懂**「换型才涨倍率」仍要 6–8 人真人盲玩（盲玩包 S2 已补观测项）。
+- 本轮**没有**改单局结构、圈型判据、护盾相位、四强化、主题、视觉母题与
+  `docs/盲玩交接卡.html` / `盲玩记录表.csv` 的 41 列结构；`docs/demo-90s.md` 只做
+  v4.1 文案局部修订，未整体重剪。
+- `tests/smoke.js` 与前 10 个冻结词条 `derive()` 未动；队友在途的提示词 md 文件移动
+  仍未提交、未丢弃；**GitHub 同步 ≠ 大赛提交**，真人盲玩 / 90 秒成片 / Qoder Sites 公网地址与
+  作品帖（硬截止 2026/11/30 18:00）仍为待办。

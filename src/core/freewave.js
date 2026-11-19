@@ -136,6 +136,8 @@
     return {
       armed: false, origin: null, path: [], wave: null,
       streak: 0, streakTimer: 0, closures: 0, shieldBreaks: 0,
+      /* M13 圈型策略状态：跨圈保留（reset 不清），26 秒窗口超时才归一。 */
+      lastTag: null, craftStreak: 0, repeatCount: 0, lastCraft: null, live: null,
       layer: 1, roomInLayer: 0, continued: false, seed: seed || 'free',
       tiles: tiles(seed || 'free'), tileBuff: null, boss: false
     };
@@ -146,7 +148,7 @@
     f.path = [pt(p.x, p.y)];
     return true;
   }
-  function reset(f) { f.armed = false; f.origin = null; f.path = []; }
+  function reset(f) { f.armed = false; f.origin = null; f.path = []; f.live = null; }
   function record(f, p) {
     if (!f.armed || !f.path.length) return false;
     if (dist(f.path[f.path.length - 1], p) < B().sampleGap) return false;
@@ -160,7 +162,8 @@
     if (dist(p, f.origin) > q.closeRadius || f.path.length < q.minPoints) return null;
     var c = classify(f.path);
     if (c.area < q.minArea) return { rejected: 'area', area: c.area, poly: f.path.slice() };
-    return { type: 'closed', poly: f.path.slice(), report: c };
+    /* craft 在兑现瞬间结算并写入 f 的圈型历史；拒绝分支不调用，不算一圈。 */
+    return { type: 'closed', poly: f.path.slice(), report: c, craft: craft(f, c) };
   }
   function report(f, c, streak) {
     var q = B(), n = clamp(streak || 1, 1, q.streakCap);
@@ -169,6 +172,86 @@
              length: c.length, bends: c.bends, streak: n, nextMul: mul,
              damage: Math.round(c.damage * mul) };
   }
+  /* ---------- M13 圈型策略：换型连扫 / 重复衰减 / 专属效果 ----------
+   * 诊断（一次性真实 WASD 实跑）：小圈 7.87 伤害/秒 > 中圈 6.16 > 大圈 5.23，
+   * 且连扫只按次数累加，连刷最小圈可滚到 9.51 伤害/秒 —— 大圈与折角圈除被
+   * 护盾相位强制外毫无动机。这里把「换圈型」变成唯一涨倍率的途径，并给四种圈
+   * 各一个不可替代的效果；classify() / report() 的原返回值保持不变，因此 M11
+   * 的 23 条基线断言与冻结数值契约都不受影响。 */
+  var EFFECT_LABEL = {
+    quick: '迅捷 · 冷却缩减',
+    mend: '续航 · 回复生命',
+    breach: '破阵 · 额外蓄势',
+    pierce: '穿透 · 圈边也扫'
+  };
+  function craftCfg() {
+    var d = { switchStep: 0.20, switchCap: 3, repeatDecay: 0.80, repeatFloor: 0.50,
+      smallCdCut: 0.55, smallCombo: 1, midHeal: 5,
+      bigCharge: 1, bigStall: 0.22, bentReach: 32, liveMinPoints: 4 };
+    var q = B().craft || {};
+    Object.keys(d).forEach(function (k) { if (typeof q[k] === 'number') d[k] = q[k]; });
+    return d;
+  }
+  function craftKey(c) { return c.tag + (c.bent ? '+bent' : ''); }
+  /* 主效果由面积档决定；折点是「附加穿透」而不是另一个圈型，
+   * 否则矩形大圈（本身就有 3 个折点）会把大圈的「破阵」效果永久吃掉。 */
+  function craftEffect(c) {
+    if (c.tag === 'small') return 'quick';
+    if (c.tag === 'mid') return 'mend';
+    return 'breach';
+  }
+  /* 走位过程中的实时预估：把当前路径接回起点，先看自己正在画哪种圈、
+   * 是否比上一圈换了型、离兑现门槛还差多少。渲染与 HUD 共用这一份结果。 */
+  function live(f) {
+    var q = craftCfg();
+    if (!f || !f.armed || !f.origin || f.path.length < q.liveMinPoints) return null;
+    var c = classify(f.path.concat([f.origin])), eff = craftEffect(c), key = craftKey(c);
+    return {
+      tag: c.tag, bent: c.bent, label: c.label, area: c.area, bends: c.bends,
+      points: f.path.length, key: key,
+      switched: !!f.lastTag && key !== f.lastTag,
+      ready: c.area >= B().minArea && f.path.length >= B().minPoints,
+      streak: f.craftStreak || 0,
+      effect: eff, effectLabel: EFFECT_LABEL[eff],
+      pierce: !!c.bent
+    };
+  }
+  /* 兑现时结算：换型 → 连扫 +1 并给倍率；重复同型 → 倍率逐次衰减。
+   * 同时更新 f 上的圈型历史（reset() 不清这些字段，跨圈保留）。 */
+  function craft(f, c) {
+    var q = craftCfg(), key = craftKey(c);
+    var first = !f.lastTag, switched = !first && key !== f.lastTag;
+    var streak, repeatCount, mul;
+    if (first || switched) {
+      repeatCount = 0;
+      streak = first ? 1 : Math.min(q.switchCap, (f.craftStreak || 0) + 1);
+      mul = 1 + q.switchStep * (streak - 1);
+    } else {
+      repeatCount = (f.repeatCount || 0) + 1;
+      streak = Math.max(1, f.craftStreak || 1);
+      mul = Math.max(q.repeatFloor, Math.pow(q.repeatDecay, repeatCount));
+    }
+    var effect = craftEffect(c);
+    var out = {
+      first: first, switched: switched, key: key, lastKey: f.lastTag || null,
+      streak: streak, repeatCount: repeatCount, mul: +mul.toFixed(3),
+      effect: effect, label: EFFECT_LABEL[effect], pierce: !!c.bent,
+      bonus: {
+        smallCdCut: q.smallCdCut, smallCombo: q.smallCombo,
+        midHeal: q.midHeal, bigCharge: q.bigCharge,
+        bigStall: q.bigStall, bentReach: q.bentReach
+      }
+    };
+    f.lastTag = key; f.craftStreak = streak; f.repeatCount = repeatCount;
+    f.lastCraft = out;
+    return out;
+  }
+  /* 26 秒窗口超时：连扫与圈型历史一并归零，下一圈重新起算。 */
+  function decayCraft(f) {
+    f.streak = 0; f.craftStreak = 0; f.repeatCount = 0;
+    f.lastTag = null; f.lastCraft = null;
+  }
+
   function waveFrom(poly, rep) {
     return { path: poly.slice().reverse(), position: 0, speed: B().waveSpeed,
              damage: rep.damage, hit: {}, tag: rep.tag, label: rep.label, life: 0 };
@@ -283,7 +366,9 @@
     distanceToPoly: distanceToPoly, classify: classify,
     tiles: tiles, tileAt: tileAt, tileBuff: tileBuff, gridStep: function () { return B().gridStep; },
     create: create, arm: arm, reset: reset, record: record, close: close,
-    report: report, waveFrom: waveFrom, advanceWave: advanceWave,
+    report: report, craftKey: craftKey, craftEffect: craftEffect, craft: craft,
+    live: live, decayCraft: decayCraft, EFFECT_LABEL: EFFECT_LABEL,
+    waveFrom: waveFrom, advanceWave: advanceWave,
     shieldSpec: shieldSpec, matchesShield: matchesShield,
     offer: offer, loopRewards: loopRewards,
     save: save, load: load, hasSave: hasSave, clearSave: clearSave, saveLabel: saveLabel

@@ -1233,6 +1233,17 @@
     ctx.fillStyle = col.amber;
     var metric = rep.area ? rep.area + 'm²' : rep.length;
     ctx.fillText('LOOP CLOSED / ' + rep.label + ' / ' + metric + ' / STREAK x' + rep.streak, bx, by + 19);
+    /* M13：把「这一圈附带了什么效果 / 倍率怎么来的」也拍在画面上。 */
+    if (s.free && rep.effectLabel) {
+      ctx.font = '600 11px "Microsoft YaHei", system-ui, sans-serif';
+      var eff = rep.effectLabel + ' · 回扫 ' + (rep.mul || 1).toFixed(2) + '×' +
+        (rep.switched ? ' · 换型连扫 ×' + rep.streak : ' · 同型衰减') +
+        (rep.pierce ? ' · 穿透' : '');
+      ctx.lineWidth = 3; ctx.strokeStyle = rgba(col.outline, 0.9);
+      ctx.strokeText(eff, bx, by + 38);
+      ctx.fillStyle = rep.switched ? col.amber : col.guide;
+      ctx.fillText(eff, bx, by + 38);
+    }
     ctx.restore();
   }
 
@@ -1322,6 +1333,27 @@
       ctx.lineWidth = 3; ctx.strokeStyle = rgba(col.bg, 0.9);
       ctx.strokeText('ORIGIN / 回到此处兑现', o.x, o.y - 16);
       ctx.fillStyle = col.amber; ctx.fillText('ORIGIN / 回到此处兑现', o.x, o.y - 16);
+      /* M13：走的过程中就把「正在画哪种圈 / 是否换了型 / 还差多少」画出来，
+       * 不再等兑现才知道自己画了什么。f.live 由 updateFree 每帧算一次。 */
+      var lv = f.live;
+      if (lv) {
+        var lx = clamp(p.x, 150, W - 150), ly = clamp(p.y - 36, 40, H - 40);
+        ctx.font = '600 11px ui-monospace, Consolas, monospace';
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        var lvText = 'LIVE ' + lv.label + ' / ' + lv.area + 'm²' +
+          (lv.switched ? ' / 换型 ×' + Math.min(3, (f.craftStreak || 0) + 1) : ' / 与上圈同型') +
+          (lv.pierce ? ' / 穿透' : '');
+        ctx.lineWidth = 3; ctx.strokeStyle = rgba(col.bg, 0.92);
+        ctx.strokeText(lvText, lx, ly);
+        ctx.fillStyle = lv.switched ? col.amber : col.guide;
+        ctx.fillText(lvText, lx, ly);
+        if (!lv.ready) {
+          ctx.font = '500 9px ui-monospace, Consolas, monospace';
+          var need = '面积 / 点数未达标 · 继续绕大一点';
+          ctx.strokeText(need, lx, ly + 15);
+          ctx.fillStyle = '#D9644B'; ctx.fillText(need, lx, ly + 15);
+        }
+      }
     }
     if (f.wave) {
       var w = f.wave, pts = w.path, info = waveHead(w);
@@ -1493,6 +1525,9 @@
         ' [' + fb.shield.state.toUpperCase() + ']';
       if (s.chrono && s.chrono.stall > 0)
         tag += ' · CHRONO ' + C.core.perks.BALANCE.chrono.stallScale.toFixed(2) + 'x';
+      /* M13：图廓右上角给出当前圈型策略倍率，换型 / 同型一眼可辨。 */
+      if (s.free.lastCraft) tag += ' · CRAFT ' + s.free.lastCraft.mul.toFixed(2) + '×' +
+        (s.free.lastCraft.switched ? '[换型]' : '[同型]');
     } else if (s && s.loop) {
       tag = 'LAYER ' + (s.loop.layer || 1) + ' · ROOM ' + ((s.loop.roomInLayer || 0) + 1) +
         ' · LOOP ' + ((s.recall && s.recall.loops) || 0);

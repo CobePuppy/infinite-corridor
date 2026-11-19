@@ -759,40 +759,72 @@
   }
   function onFreeClosed(s, closed) {
     var f = s.free, FW = C.core.freewave, CH = C.core.chrono;
-    f.streak = Math.min(B.free.streakCap, (f.streak || 0) + 1);
+    /* M13：连扫层数由「是否换圈型」决定，不再按闭环次数滚雪球。
+     * report() 传 1 保持 M11 基础伤害语义，倍率统一由 craft.mul 给出，
+     * 让换型 / 重复同型只有一处口径，HUD 与结算不会各说各话。 */
+    var cr = closed.craft || FW.craft(f, closed.report);
+    f.streak = cr.streak;
     f.streakTimer = B.free.streakWindow;
     f.closures += 1;
-    var rep = FW.report(f, closed.report, f.streak);
+    var rep = FW.report(f, closed.report, 1);
+    rep.streak = cr.streak; rep.nextMul = cr.mul; rep.mul = cr.mul;
+    rep.switched = cr.switched; rep.effect = cr.effect;
+    rep.effectLabel = cr.label; rep.pierce = cr.pierce;
+    var damage = Math.round(rep.damage * cr.mul);
+    rep.damage = damage;
+
     var boss = freeBoss(s);
     if (boss && boss.shield) {
       var sh = boss.shield, spec = sh.spec;
       if (sh.state === 'exposed') {
-        damageEnemy(s, boss, Math.round(rep.damage * spec.exposedWaveMul), true, 1);
+        damageEnemy(s, boss, Math.round(damage * spec.exposedWaveMul), true, 1);
         emit(s, 'bossShieldHit', { exposed: true });
       } else if (sh.state !== 'reforming') {
         var matched = FW.matchesShield(rep, spec.required);
-        sh.charge += matched ? 1 : spec.weakCharge;
+        /* 大圈「破阵」：额外蓄势，让 10 秒的大绕在首领战里真的值。 */
+        var bonus = cr.effect === 'breach' ? cr.bonus.bigCharge : 0;
+        sh.charge += (matched ? 1 : spec.weakCharge) + bonus;
         boss.shieldFlash = matched ? 0.24 : 0.12;
         emit(s, 'bossShieldCharge', { matched: matched, required: spec.required,
-          requiredLabel: spec.requiredLabel, charge: sh.charge, need: spec.need });
+          requiredLabel: spec.requiredLabel, charge: sh.charge, need: spec.need,
+          craftBonus: bonus });
         if (sh.charge >= spec.need) breakFreeShield(s, boss);
       }
     }
-    f.wave = FW.waveFrom(closed.poly, rep);
-    s.closure = { t: 1, loops: f.closures,
-      report: Object.assign({}, rep, { path: closed.poly, lanes: [] }) };
+    /* M13 圈型专属效果：小圈减 CD + 连段、中圈回血、大圈延长凝滞；
+     * 折角圈作为附加穿透，让回扫波也能扫到贴着圈边的敌人。 */
+    var p = s.player;
+    if (cr.effect === 'quick') {
+      p.fireCd = Math.max(0, p.fireCd * (1 - cr.bonus.smallCdCut));
+      freeCombo(s, cr.bonus.smallCombo);
+    } else if (cr.effect === 'mend') {
+      p.hp = Math.min(p.maxHp, p.hp + cr.bonus.midHeal);
+    }
     var rw = FW.loopRewards(s);
-    if (rw.heal) s.player.hp = Math.min(s.player.maxHp, s.player.hp + rw.heal);
-    if (rw.dash) s.player.dashCd = 0;
+    if (rw.heal) p.hp = Math.min(p.maxHp, p.hp + rw.heal);
+    if (rw.dash) p.dashCd = 0;
     f.goldPerKill = rw.goldPerKill;
     CH.stall(s.chrono);                 /* ① 兑现瞬间凝滞，玩家全速补刀 */
+    /* M13 大圈「破阵」：把凝滞拉到 stallTime+bigStall。用 max 而非 +=，
+     * 连续两圈大圈不会把凝滞无限叠上去；CH.stall() 的 max 语义保证
+     * 随后波命中触发的短凝滞不会把它抹掉。 */
+    if (cr.effect === 'breach')
+      s.chrono.stall = Math.max(s.chrono.stall, B.chrono.stallTime + cr.bonus.bigStall);
+    f.wave = FW.waveFrom(closed.poly, rep);
+    if (cr.pierce) f.wave.reach = cr.bonus.bentReach;
+    s.closure = { t: 1, loops: f.closures,
+      report: Object.assign({}, rep, { path: closed.poly, lanes: [] }) };
     s.shake = Math.max(s.shake, 6); s.comboFlash = 1;
     A('recall');
     FW.reset(f);
-    emit(s, 'loopClosed', { loops: f.closures, streak: f.streak, heal: rw.heal });
+    emit(s, 'loopClosed', { loops: f.closures, streak: cr.streak, heal: rw.heal,
+      switched: cr.switched, mul: cr.mul, effectLabel: cr.label });
     emit(s, 'loopClosure', { loops: f.closures, tag: rep.tag, label: rep.label,
       length: rep.length, area: rep.area, lanes: [], corner: rep.bent,
-      streak: rep.streak, nextMul: rep.nextMul, damage: rep.damage, path: closed.poly });
+      streak: cr.streak, nextMul: cr.mul, damage: damage, path: closed.poly,
+      switched: cr.switched, effect: cr.effect, effectLabel: cr.label,
+      pierce: cr.pierce });
+    if (cr.switched) emit(s, 'craftSwitch', { streak: cr.streak, mul: cr.mul, label: rep.label });
   }
 
   function updateFree(s, dt, input) {
@@ -827,7 +859,8 @@
     var tb = f.tileBuff;
     if (f.streakTimer > 0) {
       f.streakTimer = Math.max(0, f.streakTimer - dt);
-      if (f.streakTimer === 0) f.streak = 0;
+      /* M13：窗口超时把圈型历史一并归零，下一圈重新起算换型连扫。 */
+      if (f.streakTimer === 0) FW.decayCraft(f);
     }
     /* 输入 → 玩家移动（真实 dt） */
     var ax = (input.right ? 1 : 0) - (input.left ? 1 : 0);
@@ -861,6 +894,8 @@
     /* ⑤-b 自由路径：E 定起点 → 逐帧采样 → 回到起点且面积达标才兑现 */
     if (input.arm && !f.armed) { FW.arm(f, p); emit(s, 'freeArm', { x: p.x, y: p.y }); }
     if (f.armed) FW.record(f, p);
+    /* M13：每帧算一次实时圈型预估，渲染与 HUD 共用，避免两边各算一遍。 */
+    f.live = FW.live(f);
     var closed = FW.close(f, p);
     if (closed && closed.type === 'closed') onFreeClosed(s, closed);
     else if (closed && closed.rejected === 'area') {
@@ -945,7 +980,7 @@
       var info = FW.advanceWave(f.wave, wdt);
       var poly = f.wave.path.slice().reverse();
       /* 长锋：把「圈内」放宽到「圈内或贴边」，仍用同一套多边形几何工具。 */
-      var reach = (s.perks.p_impact_reach || 0) * q.mod.reachWidth;
+      var reach = (s.perks.p_impact_reach || 0) * q.mod.reachWidth + (f.wave.reach || 0);
       s.enemies.forEach(function (e) {
         if (e.dead || f.wave.hit[e.freeId]) return;
         if (!FW.inside(poly, e) && (!reach || FW.distanceToPoly(poly, e) > reach)) return;

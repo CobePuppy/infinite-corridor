@@ -44,9 +44,13 @@
     return sample(c, t, isBoss ? B().shadowBossDelay : B().shadowDelay);
   }
 
-  /* 命中 / 击飞瞬间触发凝滞：世界 0.30 倍速、持续 0.35s，玩家全速。 */
+  /* 命中 / 击飞瞬间触发凝滞：世界 0.30 倍速、持续 0.35s，玩家全速。
+   * M13：取 max 而不是直接赋值 —— 大圈「破阵」会把凝滞延长到 0.57s，
+   * 随后回扫波命中敌人的短凝滞不能把它覆盖回 0.35s。
+   * 仅当 stall 已高于 0.35 时行为不同（只有 M13 大圈能做到），
+   * 其余场景与 M11 逐帧一致，不叠加、不无限续时。 */
   function stall(c) {
-    c.stall = B().stallTime;
+    c.stall = Math.max(c.stall, B().stallTime);
     c.scale = B().stallScale;
   }
   function worldScale(c) { return c.stall > 0 ? c.scale : 1; }

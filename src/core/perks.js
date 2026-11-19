@@ -247,6 +247,18 @@
         reachWidth: 26,
         cdCutBase: 0.14, cdCutPerTier: 0.10, cdCutPerk: 0.10,
         stepPx: 10
+      },
+      /* M13 圈型策略：把「换圈型」变成唯一涨连扫倍率的途径，重复同型逐次衰减；
+       * 四种圈各有不可替代的效果。数值只放这里，判定在 freewave.js / engine.js。
+       * 不改上面的 damage* / area* / streak*，因此 M11 冻结基线不受影响。 */
+      craft: {
+        switchStep: 0.20, switchCap: 3,
+        repeatDecay: 0.80, repeatFloor: 0.50,
+        smallCdCut: 0.55, smallCombo: 1,
+        midHeal: 5,
+        bigCharge: 1, bigStall: 0.22,
+        bentReach: 32,
+        liveMinPoints: 4
       }
     },
     impact: {

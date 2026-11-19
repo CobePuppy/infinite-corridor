@@ -440,9 +440,19 @@
       var lv = Math.max(1, L2.streak || 0);
       tb.classList.remove('hidden');
       tb.dataset.level = String(lv);
-      $('streak-state').textContent = lv > 1
-        ? ('连扫 ×' + lv + ' · 回扫 ' + (1 + SW.streakStep * (lv - 1)).toFixed(2) + '×')
-        : '连扫待蓄 · 连续闭环可叠加';
+      if (s.free) {
+        /* M13：倍率由「换型连扫」给出，重复同型逐次衰减；直接显示真实倍率，
+         * 不再用 M11 那条按次数累加的旧口径，免得 HUD 与结算各说各话。 */
+        var cr = s.free.lastCraft;
+        $('streak-state').textContent = cr
+          ? ('换型连扫 ×' + cr.streak + ' · 回扫 ' + cr.mul.toFixed(2) + '× · ' +
+             (cr.switched ? '换型生效' : cr.first ? '首圈' : '同型衰减'))
+          : '按 E 定起点 · 换圈型可叠连扫';
+      } else {
+        $('streak-state').textContent = lv > 1
+          ? ('连扫 ×' + lv + ' · 回扫 ' + (1 + SW.streakStep * (lv - 1)).toFixed(2) + '×')
+          : '连扫待蓄 · 连续闭环可叠加';
+      }
       $('streak-fill').style.width = (lv > 1
         ? Math.min(100, (L2.streakTimer || 0) / SW.streakWindow * 100) : 0) + '%';
       $('streak-timer').textContent = lv > 1 ? (L2.streakTimer || 0).toFixed(1) + 's' : '';
@@ -467,11 +477,25 @@
       var L = s.loop || s.free, rec = s.recall;
       var streakTag = L.streak > 1 ? ' · 连扫 ×' + L.streak : '';
       if (s.free) {
-        var f = s.free, sh3 = boss && boss.shield;
-        if (f.armed) hint = '回到起点兑现 · 已走 ' + f.path.length + ' 点' + streakTag;
+        var f = s.free, sh3 = boss && boss.shield, lv = f.live;
+        if (f.armed) {
+          hint = lv
+            ? ('正在画 ' + lv.label + ' ' + lv.area + 'm² · ' +
+               (lv.switched ? '换型可叠连扫' : '与上圈同型 · 换个圈型') +
+               (lv.ready ? ' · 回起点兑现' : ' · 还不够大'))
+            : ('回到起点兑现 · 已走 ' + f.path.length + ' 点' + streakTag);
+        }
         else if (sh3 && sh3.state === 'exposed') hint = '护盾崩解 · ' + boss.guardOpen.toFixed(1) + ' 秒全额输出';
         else if (sh3) hint = '第 ' + sh3.spec.phase + ' 相位 · 需' + sh3.spec.requiredLabel + '闭环破盾';
-        else hint = '按 E 定起点 · 绕一圈回到起点兑现' + streakTag;
+        else {
+          var lastCn = f.lastTag
+            ? (f.lastTag.indexOf('big') === 0 ? '大圈' :
+               f.lastTag.indexOf('mid') === 0 ? '中圈' : '小圈') +
+              (f.lastTag.indexOf('+bent') !== -1 ? '·折角' : '')
+            : '';
+          hint = '按 E 定起点 · 绕一圈回到起点兑现' +
+            (lastCn ? ' · 上一圈 ' + lastCn + '，换型可叠连扫' : '') + streakTag;
+        }
         if (f.tileBuff && f.tileBuff.kind !== 'none') hint += ' · ' + f.tileBuff.label;
       }
       else if (s.exitActive) hint = '本间已清 · 走到右侧廊口' + streakTag;
