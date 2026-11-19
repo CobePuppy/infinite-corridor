@@ -77,7 +77,16 @@
     p_loop_dash:   { name: '回步', rarity: 'rare', max: 1, tag: '机动',
       desc: '每次完成闭环立即刷新冲刺，方便穿过堵点换一条廊。' },
     p_loop_greed:  { name: '拾遗', rarity: 'common', max: 2, tag: '金币',
-      desc: '被回扫击倒的敌人额外掉落金币，可在层末留作续玩本钱。' }
+      desc: '被回扫击倒的敌人额外掉落金币，可在层末留作续玩本钱。' },
+    /* M9：把「破盾」也变成可构筑的路线选择，而不是固定流程。 */
+    p_loop_breach: { name: '破阵', rarity: 'epic', max: 1, tag: '破盾',
+      desc: '每个相位少需一次有效闭环即可崩解护盾。' },
+    p_loop_window: { name: '延窗', rarity: 'rare', max: 2, tag: '破盾',
+      desc: '护盾崩解后的全额输出窗口每层 +0.9 秒。' },
+    p_loop_shard:  { name: '裂锋', rarity: 'common', max: 2, tag: '破盾',
+      desc: '圈型不符时的折算蓄势提高，绕错路也能慢慢磨开护盾。' },
+    p_loop_overdrive: { name: '过载回扫', rarity: 'epic', max: 1, tag: '破盾',
+      desc: '暴露窗口内回扫伤害再提升 60%，鼓励边跑边打。' }
   };
   var IMPACT = {
     p_impact_heavy: {
@@ -158,14 +167,32 @@
        * 让「连续闭环」与「选路词条」都有可感知的收益。 */
       speed: 860, width: 30, damage: 34,
       cornerWidth: 57, cornerDistance: 96, cornerBonus: 16, wideBonus: 12, swiftMul: 1.35,
-      longDistance: 1850, longDamage: 54, shortDistance: 1250, shortDamage: 48,
+      longDistance: 1850, longDamage: 54,
+      /* M9 修正既有缺陷：最短闭环（直上廊 + 中廊）约 1724，原 1250 让「短圈」
+       * 永远不成立，p_loop_focus 与 shortDamage 从未生效。提到 1800 后
+       * 短圈 / 中圈 / 长圈真正分流：直上廊+中廊≈1724、折上廊+中廊≈1876、
+       * 下廊+中廊≈1952；tests/loop.js §B3 的 shortDistance<longDistance 仍成立。 */
+      shortDistance: 1800, shortDamage: 48,
       /* 一圈实际约 8–10 秒，窗口必须明显长于一圈才接得上「连续闭环」；
        * 早期设 7 秒时连扫永远停在 ×1，等于机制不存在。受伤仍立即清零。 */
       streakStep: 0.15, streakCap: 3, streakWindow: 26,
       bulletMul: 0.34, guardWindow: 3.3, bossHpMul: 1.0,
       bossHp: 168, bossDamage: 8, patrolSpeed: 132,
       mendPerLoop: 6, greedPerKill: 3,
-      layers: 3, roomsPerLayer: 3, enemyDamage: 8
+      layers: 3, roomsPerLayer: 3, enemyDamage: 8,
+      /* M9 多相位巡廊首领：护盾闭合 → 崩解 → 全额输出窗口 → 重构 → 下一相位。
+       * 每个相位要求不同圈型破盾，逼玩家在战斗中改走法；窗口结束不回血，
+       * 但重构后所需闭环数、巡逻速度与窗口长度都随之变化。 */
+      shield: {
+        phases: ['any', 'corner', 'long', 'short'],
+        baseNeed: 2, needEvery: 2, needCap: 4,
+        weakCharge: 0.34,
+        baseWindow: 3.6, windowStep: 0.22, windowMin: 2.2,
+        reformTime: 1.15,
+        exposedWaveMul: 2.2,
+        speedStep: 0.13, speedCap: 1.6,
+        cornerBends: 3
+      }
     },
     impact: {
       blade: { damage: 12, cooldown: 0.32, range: 74, halfArc: 0.73, speed: 530, redirect: 480 },

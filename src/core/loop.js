@@ -269,6 +269,57 @@
     };
   }
 
+  /* ---------- M9 多相位护盾：纯规则层，不碰 DOM / 引擎状态 ----------
+   * shieldSpec(breaks, perks) 给出「第 breaks+1 相位」的全部参数；
+   * waveTags(wave, layout) 只从 recall.js 已产出的客观几何（wave.routes /
+   * wave.length 与廊道折点数）读圈型，不新增算法；matchesShield 做门槛判定。
+   * 这样破盾规则与帧循环解耦，可被 tests/loop.js 直接单测。 */
+  var SHIELD_LABEL = {
+    any: '任意闭环', short: '短圈', long: '长圈', corner: '折角圈'
+  };
+  function shieldSpec(breaks, perks) {
+    var S = C.core.perks.BALANCE.loop.shield, p = perks || {};
+    var n = Math.max(0, breaks | 0);
+    var need = Math.min(S.needCap, S.baseNeed + Math.floor(n / S.needEvery) -
+      (p.p_loop_breach ? 1 : 0));
+    need = Math.max(1, need);
+    var required = S.phases[n % S.phases.length];
+    return {
+      phase: n + 1,
+      required: required,
+      requiredLabel: SHIELD_LABEL[required] || required,
+      need: need,
+      window: Math.max(S.windowMin, S.baseWindow - n * S.windowStep +
+        (p.p_loop_window ? 0.9 * p.p_loop_window : 0)),
+      reformTime: S.reformTime,
+      speedMul: Math.min(S.speedCap, 1 + n * S.speedStep),
+      weakCharge: p.p_loop_shard ? Math.min(0.85, S.weakCharge + 0.33 * p.p_loop_shard) : S.weakCharge,
+      exposedWaveMul: S.exposedWaveMul * (p.p_loop_overdrive ? 1.6 : 1)
+    };
+  }
+  /* 折角圈：至少一条廊含 ≥3 个中间折点。直上廊只有 2 个、中廊 0 个，
+   * 折上廊 / 双折廊 / 下廊都算 —— 相位 2 要求玩家不能只走最短直圈。 */
+  function waveTags(wave, layout) {
+    var B = C.core.perks.BALANCE.loop;
+    var length = (wave && wave.length) || 0;
+    var routes = (wave && wave.routes) || [];
+    var bent = routes.some(function (id) {
+      var lane = layout && layout.lanes && layout.lanes[id];
+      return !!lane && (lane.points.length - 2) >= B.shield.cornerBends;
+    });
+    return {
+      length: length,
+      short: length < B.shortDistance,
+      long: length >= B.longDistance,
+      corner: bent,
+      lanes: routes.slice()
+    };
+  }
+  function matchesShield(tags, required) {
+    if (required === 'any') return true;
+    return !!(tags && tags[required]);
+  }
+
   /* ---------- 存档：每间房结算写一次快照，刷新可续玩 ---------- */
   function save(s) {
     if (!s || !s.loop) return null;
@@ -307,6 +358,7 @@
     makeLayout: makeLayout, validate: validate, along: along,
     plan: plan, roomAt: roomAt,
     waveRules: waveRules, offer: offer, loopRewards: loopRewards,
+    SHIELD_LABEL: SHIELD_LABEL, shieldSpec: shieldSpec, waveTags: waveTags, matchesShield: matchesShield,
     save: save, load: load, hasSave: hasSave, clearSave: clearSave, saveLabel: saveLabel
   };
 })(window.Corridor = window.Corridor || {});

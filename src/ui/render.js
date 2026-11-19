@@ -361,7 +361,8 @@
   function drawRecallPaths(ctx, s, t) {
     var recall = s.recall;
     var rules = C.core.recall;
-    var color = CUR.col.guide, glow = CUR.vis.glow || 1;
+    /* M9：回扫波颜色随护盾状态变 —— 青=削壳、金=窗口重击、藕紫=重构中 */
+    var color = waveColor(s), glow = CUR.vis.glow || 1;
     ctx.save(); ctx.lineCap = 'round'; ctx.lineJoin = 'round';
     rules.trace(recall).forEach(function (points) {
       if (!points || points.length < 2) return;
@@ -838,7 +839,8 @@
     ctx.strokeStyle = rgba(color, 0.18); ctx.lineWidth = 1;
     ctx.beginPath(); ctx.arc(0, 0, e.r + 7, 0, Math.PI * 2); ctx.stroke();
     ctx.save(); enemyGlyph(ctx, e, color); ctx.restore();
-    if (e.patrol) {
+    /* M9：长局首领有独立护盾绘制（drawBossShield），这里只保留旧原型的一圈虚线 */
+    if (e.patrol && !e.shield) {
       ctx.lineWidth = 2;
       ctx.strokeStyle = e.guardOpen > 0 ? col.crit : col.fold;
       if (ctx.setLineDash) ctx.setLineDash(e.guardOpen > 0 ? [6, 5] : [13, 6]);
@@ -1014,6 +1016,172 @@
     });
   }
 
+  /* ---------- M9：巡廊首领护盾三态强视觉 ----------
+   * closed    → 双层六边形护盾壳 + 相位刻线 + 蓄势进度弧 + 「需 XX 圈」标签
+   * exposed   → 外壳碎裂飞散 + 琥珀倒计时环 + 中心准星
+   * reforming → 六边形逐边重建 + REBUILD 读数
+   * 用户诉求「boss 破盾与否没有视觉上展示」就在这里落地：
+   * 三态在战场上一眼可辨，且护盾上直接画出「还差几圈」。 */
+  function waveColor(s) {
+    var col = CUR.col, list = (s && s.enemies) || [];
+    for (var i = 0; i < list.length; i++) {
+      if (list[i].patrol && list[i].shield) {
+        var st = list[i].shield.state;
+        if (st === 'exposed') return col.amber;
+        if (st === 'reforming') return col.fold;
+        return col.guide;
+      }
+    }
+    return col.guide;
+  }
+  function shieldHex(ctx, r) {
+    ctx.beginPath();
+    for (var i = 0; i < 6; i++) {
+      var a = -Math.PI / 2 + i * Math.PI / 3;
+      var x = Math.cos(a) * r, y = Math.sin(a) * r;
+      if (i) ctx.lineTo(x, y); else ctx.moveTo(x, y);
+    }
+    ctx.closePath();
+  }
+  function shieldBoss(s) {
+    var list = (s && s.enemies) || [];
+    for (var i = 0; i < list.length; i++) {
+      if (list[i].patrol && list[i].shield) return list[i];
+    }
+    return null;
+  }
+  function drawBossShield(ctx, s, t) {
+    var boss = shieldBoss(s);
+    if (!boss) return;
+    var sh = boss.shield, spec = sh.spec, col = CUR.col, glow = CUR.vis.glow || 1;
+    var R0 = boss.r + 15;
+    ctx.save();
+    ctx.translate(boss.x, boss.y);
+    if (sh.state === 'closed') {
+      var pulse = 0.5 + 0.5 * Math.sin(t * 3.2);
+      ctx.strokeStyle = rgba(col.fold, 0.20 + 0.10 * pulse);
+      ctx.lineWidth = 12 * glow;
+      shieldHex(ctx, R0 + 7); ctx.stroke();
+      ctx.fillStyle = rgba(col.fold, 0.055);
+      shieldHex(ctx, R0 + 7); ctx.fill();
+      ctx.strokeStyle = rgba(col.fold, 0.85);
+      ctx.lineWidth = 2.2;
+      shieldHex(ctx, R0 + 7); ctx.stroke();
+      ctx.strokeStyle = rgba(sh.flash > 0 ? col.flash : col.rust, sh.flash > 0 ? 0.9 : 0.42);
+      ctx.lineWidth = 1.2;
+      shieldHex(ctx, R0 + 2); ctx.stroke();
+      /* 相位刻线：第 n 相位画 n 道内环，护盾越到后面越「厚」 */
+      for (var k = 0; k < Math.min(spec.phase, 6); k++) {
+        ctx.strokeStyle = rgba(col.fold, 0.24);
+        ctx.lineWidth = 1;
+        shieldHex(ctx, R0 - 3 - k * 4); ctx.stroke();
+      }
+      /* 蓄势进度弧：把「还差几圈破盾」直接画在壳上 */
+      var ratio = clamp(sh.charge / spec.need, 0, 1);
+      ctx.strokeStyle = rgba(col.amber, 0.9);
+      ctx.lineWidth = 3.4;
+      ctx.beginPath();
+      ctx.arc(0, 0, R0 + 13, -Math.PI / 2, -Math.PI / 2 + ratio * Math.PI * 2);
+      ctx.stroke();
+      if (boss.shieldFlash > 0) {
+        ctx.strokeStyle = rgba(col.flash, 0.75);
+        ctx.lineWidth = 4;
+        shieldHex(ctx, R0 + 9); ctx.stroke();
+      }
+    } else if (sh.state === 'exposed') {
+      /* 碎裂的外壳：随 flash 向外飞散 */
+      var f = sh.flash;
+      ctx.strokeStyle = rgba(col.amber, 0.55 * (0.35 + f));
+      ctx.lineWidth = 2;
+      for (var q = 0; q < 6; q++) {
+        var a0 = -Math.PI / 2 + q * Math.PI / 3;
+        var rr = R0 + 8 + (1 - f) * 26;
+        ctx.beginPath();
+        ctx.moveTo(Math.cos(a0) * rr, Math.sin(a0) * rr);
+        ctx.lineTo(Math.cos(a0 + Math.PI / 3) * rr, Math.sin(a0 + Math.PI / 3) * rr);
+        ctx.stroke();
+      }
+      /* 输出窗口倒计时环：从满到空，肉眼可读还剩多久 */
+      var left = clamp(boss.guardOpen / spec.window, 0, 1);
+      ctx.strokeStyle = rgba(col.amber, 0.18);
+      ctx.lineWidth = 5;
+      ctx.beginPath(); ctx.arc(0, 0, R0 + 14, 0, Math.PI * 2); ctx.stroke();
+      ctx.strokeStyle = rgba(col.crit, 0.95);
+      ctx.lineWidth = 5;
+      ctx.beginPath(); ctx.arc(0, 0, R0 + 14, -Math.PI / 2, -Math.PI / 2 + left * Math.PI * 2); ctx.stroke();
+      ctx.strokeStyle = rgba(col.flash, 0.85); ctx.lineWidth = 1.4;
+      ctx.beginPath();
+      ctx.moveTo(-9, 0); ctx.lineTo(-3, 0); ctx.moveTo(9, 0); ctx.lineTo(3, 0);
+      ctx.moveTo(0, -9); ctx.lineTo(0, -3); ctx.moveTo(0, 9); ctx.lineTo(0, 3);
+      ctx.stroke();
+    } else {
+      /* 重构：六边形按进度逐边点亮 */
+      var done = clamp(sh.reform, 0, 1) * 6;
+      ctx.strokeStyle = rgba(col.guide, 0.18);
+      ctx.lineWidth = 3;
+      shieldHex(ctx, R0 + 8); ctx.stroke();
+      for (var e2 = 0; e2 < 6; e2++) {
+        var seg = clamp(done - e2, 0, 1);
+        if (seg <= 0) continue;
+        var ab = -Math.PI / 2 + e2 * Math.PI / 3;
+        ctx.strokeStyle = rgba(col.guide, 0.35 + 0.6 * seg);
+        ctx.lineWidth = 3.4;
+        ctx.beginPath();
+        ctx.moveTo(Math.cos(ab) * (R0 + 8), Math.sin(ab) * (R0 + 8));
+        ctx.lineTo(Math.cos(ab + Math.PI / 3 * seg) * (R0 + 8),
+                   Math.sin(ab + Math.PI / 3 * seg) * (R0 + 8));
+        ctx.stroke();
+      }
+    }
+    ctx.restore();
+    /* 相位 / 圈型要求标签：永远画在首领正上方，是玩家改走法的唯一提示源 */
+    ctx.save();
+    ctx.font = '500 10px ui-monospace, Consolas, monospace';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
+    var label = sh.state === 'exposed' ? 'SHIELD BREAK / 全额输出' :
+      (sh.state === 'reforming' ? 'REBUILD / 护盾重构' :
+        'PHASE ' + String(spec.phase).padStart(2, '0') + ' / ' + spec.requiredLabel);
+    var lc = sh.state === 'exposed' ? col.crit : (sh.state === 'reforming' ? col.guide : col.fold);
+    ctx.lineWidth = 3; ctx.strokeStyle = rgba(col.bg, 0.9);
+    ctx.strokeText(label, boss.x, boss.y - R0 - 24);
+    ctx.fillStyle = lc; ctx.fillText(label, boss.x, boss.y - R0 - 24);
+    ctx.restore();
+  }
+  /* 破盾瞬间的全屏爆发信号：冲击环 + 放射线 + 大字，低强度不刺眼。 */
+  function drawBreakBurst(ctx, s, t) {
+    if (!s || !(s.breakFlash > 0)) return;
+    var col = CUR.col, boss = shieldBoss(s);
+    var f = clamp(s.breakFlash, 0, 1), k = 1 - f;
+    var cx = boss ? boss.x : W / 2, cy = boss ? boss.y : H / 2;
+    ctx.save();
+    ctx.fillStyle = rgba(col.flash, 0.10 * f * f);
+    ctx.fillRect(0, 0, W, H);
+    for (var r = 0; r < 3; r++) {
+      ctx.strokeStyle = rgba(r === 0 ? col.flash : col.amber, (0.55 - r * 0.14) * f);
+      ctx.lineWidth = (5 - r) * (0.6 + f);
+      ctx.beginPath(); ctx.arc(cx, cy, 42 + k * (150 + r * 78) + r * 26, 0, Math.PI * 2); ctx.stroke();
+    }
+    ctx.strokeStyle = rgba(col.amber, 0.42 * f);
+    ctx.lineWidth = 1.6;
+    for (var q = 0; q < 12; q++) {
+      var a = q * Math.PI / 6 + t * 0.12;
+      ctx.beginPath();
+      ctx.moveTo(cx + Math.cos(a) * (36 + k * 90), cy + Math.sin(a) * (36 + k * 90));
+      ctx.lineTo(cx + Math.cos(a) * (78 + k * 190), cy + Math.sin(a) * (78 + k * 190));
+      ctx.stroke();
+    }
+    ctx.globalAlpha = clamp(f * 1.4, 0, 1);
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.font = '700 34px "Microsoft YaHei", system-ui, sans-serif';
+    ctx.lineWidth = 5; ctx.strokeStyle = rgba(col.outline, 0.92);
+    ctx.strokeText('护盾崩解', cx, cy - 62 - k * 18);
+    ctx.fillStyle = col.crit; ctx.fillText('护盾崩解', cx, cy - 62 - k * 18);
+    ctx.font = '500 11px ui-monospace, Consolas, monospace';
+    ctx.fillStyle = col.amber;
+    ctx.fillText('SHIELD BREAK / FULL DAMAGE WINDOW', cx, cy - 38 - k * 18);
+    ctx.restore();
+  }
+
   /* ---------- 后处理：VISUALS.postFx 真正接线 ---------- */
   function drawPostFx(ctx, s, t) {
     if (CUR.paper) return;
@@ -1082,6 +1250,9 @@
     if (s && s.loop) {
       tag = 'LAYER ' + (s.loop.layer || 1) + ' · ROOM ' + ((s.loop.roomInLayer || 0) + 1) +
         ' · LOOP ' + ((s.recall && s.recall.loops) || 0);
+      var sb = shieldBoss(s);
+      if (sb) tag += ' · SHIELD P' + sb.shield.spec.phase + '/' + sb.shield.spec.requiredLabel +
+        ' [' + sb.shield.state.toUpperCase() + ']';
     } else if (s && s.run && s.run.rooms) {
       tag = 'ROOM ' + ((s.roomIndex || 0) + 1) + ' / ' + s.run.rooms.length;
     }
@@ -1124,6 +1295,7 @@
     drawTrail(ctx, s);
     if (s.impact) drawImpactTrails(ctx, s);
     s.enemies.forEach(function (e) { drawEnemy(ctx, e, t); });
+    if (s.loop) drawBossShield(ctx, s, t);
     drawBullets(ctx, s);
     if (s.impact) drawImpactActions(ctx, s.impact);
     drawPlayer(ctx, s, t);
@@ -1140,6 +1312,7 @@
     }
 
     drawDamagePops(ctx, s);
+    if (s.loop) drawBreakBurst(ctx, s, t);
     if (s.bossPhase === 2) drawBossPhase(ctx, s, t);
     drawPostFx(ctx, s, t);
     drawFrame(ctx, s, t);

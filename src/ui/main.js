@@ -130,6 +130,22 @@
       case 'loopLayer':
         screens.toast('第 ' + p.layer + ' 层 · 进度已保存，可随时退出续玩', 3200);
         break;
+      /* M9：破盾三态反馈。此前 engine 发出的 loopShieldOpen 没有任何 case 接，
+       * 破盾/未破盾在界面上完全无感；这里把相位推进逐条讲清楚。 */
+      case 'bossShieldBreak':
+        screens.toast('护盾崩解 · 第 ' + p.phase + ' 相位 · ' + p.window.toFixed(1) + ' 秒全额输出', 2400);
+        break;
+      case 'bossShieldCharge':
+        if (!p.matched) screens.toast('圈型不符 · 本相位需' + p.requiredLabel + '（折算蓄势）', 1500);
+        break;
+      case 'bossShieldClose':
+        screens.toast('窗口结束 · 护盾开始重构', 1600);
+        break;
+      case 'bossShieldReform':
+        screens.toast('第 ' + p.phase + ' 相位 · 需「' + p.requiredLabel + '」闭环破盾 · ' + p.need + ' 次', 3000);
+        break;
+      case 'bossShieldHit':
+        break;
       case 'roomEnter': {
         /* M1 文案不变；若 logic-dev 把 roomType 挂在 roomEnter 上则追加类型标签 */
         var r = (p && p.room) || {};
@@ -150,7 +166,8 @@
         screens.toast('本间已清 · 出口开启' + (p.healed ? ' · 回响 +' + p.healed : ''), 2200);
         break;
       case 'bossEnter':
-        screens.toast('终室 · ' + p.boss.name, 2600);
+        screens.toast(p.shield ? ('巡廊者 · 护盾第 ' + p.shield.phase + ' 相位 · 需' + p.shield.requiredLabel + '破盾') :
+          ('终室 · ' + p.boss.name), 3200);
         break;
       case 'roomTypeEnter':
       case 'roomType':

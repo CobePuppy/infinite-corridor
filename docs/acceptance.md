@@ -544,3 +544,74 @@ damagePops / bossPhase / loop / recall / impact / shake / transition`）均未�
   §8 第 6–8 条（真人计时 / 90 秒视频 / Qoder Sites 大赛提交）仍为待办。
 - 队友在途的提示词 md 文件移动，总监**未提交、未丢弃**；`Luciandeng` 与 `origin/main`
   的分支差异**未擅自合并或强推**。**GitHub 同步 ≠ 大赛提交**。
+
+---
+
+## 附录：M9 多相位破盾玩法扩展验收（2026-11-19 · 开发总监）
+
+### 一、触发与诊断
+
+用户原话：「回扫这个机制非常有意思，不过 boss 破盾与否没有视觉上展示，你往下继续
+Plan，扩展这个玩法」。按用户一贯要求，本轮**不另写方案文档**，把 Plan 压成设计结论后
+直接落到游戏本体；继续遵守「不做风险操作」（不读浏览器配置 / 历史 / 进程 / 端口，
+不启服务、不留后台进程）。
+
+代码复核确认了用户指出的空白，且不止一处：
+
+| # | 诊断 | 证据 |
+|---|---|---|
+| 1 | 破盾 / 未破盾几乎没有视觉差别 | `render.js` 的 `drawEnemy()` 里只有一圈 `e.patrol` 虚线，按 `guardOpen` 换颜色与 `[6,5]` / `[13,6]` 虚线密度；没有护盾壳、没有蓄势进度、没有崩解爆发、没有重构动画 |
+| 2 | `loopShieldOpen` 事件发了从来没人接 | `engine.js` 波命中首领时 `emit(s,'loopShieldOpen',...)`，但 `main.js` 的 `onEvent()` 无此 case，玩家收不到任何破盾反馈 |
+| 3 | 首领只有一个相位、破盾门槛恒定 | 旧逻辑「回扫命中 → `guardOpen=3.3s` → 补枪」，窗口结束护盾直接复原，没有相位推进、没有重构、没有门槛变化 |
+| 4 | 「短圈」是空机制（顺带发现） | `BALANCE.loop.shortDistance=1250`，但最短闭环（直上廊 1000 + 中廊 724）≈1724，`p_loop_focus` / `shortDamage` 从未生效 |
+
+### 二、设计结论：把破盾做成回扫玩法的节奏核心
+
+四拍循环，挂在 boss 实例上（`closed → exposed → reforming → closed(下一相位)`）：
+
+1. **闭合**：首领巡廊，普通子弹被压到 `bulletMul` 且对首领完全弹开；回扫命中**只削护盾蓄势、不磨血**，逼玩家绕圈。护盾壳上直接画出「还差几圈」的进度弧与「需 XX 圈」标签。
+2. **崩解**：蓄势满 → 全屏爆发信号（冲击环 + 放射线 +「护盾崩解 / SHIELD BREAK」大字）、外壳碎裂飞散、震屏与双色粒子，并发 `bossShieldBreak`。
+3. **暴露窗口**：`guardOpen>0`，子弹**全额**生效，首领停火且停止巡逻让出输出空间；窗口内继续绕圈，回扫吃 `exposedWaveMul`（2.2×）加成，鼓励边跑边打；倒计时环与 HUD 条同步读数。
+4. **重构**：窗口结束护盾逐边重建（约 1.15s，期间免伤），完成后 `breaks+1`，**下一相位要求换一种圈型**（任意 → 折角 → 长圈 → 短圈循环）、所需闭环数、巡逻速度与窗口长度都随之变化；发 `bossShieldReform` 明确告知新要求。
+
+圈型不符**不扣分也不卡死**：按 `weakCharge=0.34` 折算蓄势（约三圈顶一圈），
+并 toast「圈型不符 · 本相位需折角圈」。破盾本身也进入构筑：新增 4 条 LOOP 词条
+（破阵 / 延窗 / 裂锋 / 过载回扫）。
+
+### 三、落盘清单（逐文件可核对）
+
+| 文件 | 改动 |
+|---|---|
+| `src/core/perks.js` | `BALANCE.loop.shield` 新增相位表 / 门槛 / 窗口 / 重构 / 提速 / 折角阈值；`LOOP` 池加 4 条破盾词条；`shortDistance` 1250→1800（修好空转的短圈）；冻结 `TABLE` / `IDS` / `derive()` 前 10 项逐字未动 |
+| `src/core/loop.js` | 新增纯规则 `shieldSpec(breaks,perks)` / `waveTags(wave,layout)` / `matchesShield(tags,required)` / `SHIELD_LABEL`；`waveTags` 只从 `recall.js` 已产出的 `wave.routes` / `wave.length` 与廊道折点数读客观几何，**recall.js 一行未改** |
+| `src/core/engine.js` | `setupLoopBoss()` 初始化 `boss.shield`；新增 `loopBoss()` / `breakShield()` / `onWaveHitLoopBoss()` / `updateLoopShield()`；波命中分流长局首领；巡逻按相位提速、窗口与重构期间停火；`s.breakFlash` 全屏信号；`s.loop.shieldBreaks` 计入结算；长局屏蔽旧「50% 血切 P2」避免两个阶段概念打架；`startLoop` 初始化新字段 |
+| `src/ui/render.js` | 新增 `waveColor()`（回扫波随护盾三态变青/金/藕紫）、`shieldHex()`、`drawBossShield()`（双层六边形壳 + 相位刻线 + 蓄势弧 / 碎裂碎片 + 倒计时环 + 准星 / 逐边重建 + 相位标签）、`drawBreakBurst()`（全屏爆发）；`drawFrame()` 加 `SHIELD Pn/圈型[状态]` 读数；旧原型那圈虚线原样保留 |
+| `index.html` / `src/ui/style.css` | HUD 新增 `#shield-bar` 三态条（`[data-state=closed/exposed/reforming]` 换色、暴露窗口呼吸动画、小屏降级） |
+| `src/ui/screens.js` / `src/ui/main.js` | HUD 三态文案与倒计时、hint 改为相位引导、结算加「护盾崩解」统计；`main.js` 接住 5 个新事件 toast（含 `bossShieldCharge` 的圈型不符提示）与带相位要求的 `bossEnter` 文案 |
+| `tests/loop.js` | §E4 通关测试改按新玩法口径（已破盾窗口 + 真实子弹结算，不再靠回扫磨血）；新增 §F1–§F7 共 7 条：相位规则、圈型识别、入场状态、真实帧循环四拍全链路、HUD 三态、渲染三态不抛且画面分流、静态接线契约 |
+
+**接口不变量**：`guardOpen>0` 仍表示「可被伤害」，因此 `damageEnemy()` / 子弹削弱 /
+HUD 判定几乎无需改动；旧 prototype 首领**不带 `shield` 字段**，旧的「一刀开窗」逻辑与
+`tests/recall.js` 9/9 原样通过；经典射击、单房 A/B、击飞接力、print 套印方向均未改。
+
+### 四、验证（实跑，不采信自报）
+
+| 项 | 结果 |
+|---|---|
+| `node --check`（全部 `src/**/*.js` / `tests/**/*.js`） | 通过 |
+| 八套回归基线 | `smoke 20/20`、`m2m3 58/0/0`、`fullsuite 78/78`、`recall 9/9`、`impact 21/21`、`combat-guide 5/5`、`enemy-trial 25/25`、`loop 23/23`；`node --test` 七套件合计 **85/85，0 fail** |
+| §F4 真实帧循环 | 闭合态回扫只削蓄势且 `boss.hp` 不变 → 蓄势满崩解进 `exposed` → 窗口内子弹全额 10 点、回扫加成 > 基准 → 窗口归零进 `reforming` → 重构完成进相位 2（`corner`）且提速 → 直圈折算、折角圈全额，事件链齐全 |
+| §F6 渲染三态 | 完整 mock 2D 上下文**真实调用** `C.ui.render.draw()`，closed / exposed / reforming 三态均不抛异常、各产生 >20 个实际色值，三态签名两两不同；`breakFlash=1` 的爆发信号叠加出额外画面 |
+| M8 渲染探针复跑 | 工作区 `probe-visual.cjs` 13 场景（四主题 × 首页 / 长局 + 经典 / 回扫 / 击飞 / 单房 / print）**仍全 PASS**；四主题首页最小差异 78 色值、长局 121 色值未被破坏 |
+| 约束 | 全程纯 Node + DOM stub，**不起 HTTP 服务、不开 CDP 端口、不留后台进程、不读浏览器配置 / 历史 / 进程 / 端口** |
+
+### 五、如实标注（本附录不宣称的部分）
+
+- 自动化能证明**状态机可达、三态视觉确实分流、八套基线未回归**，
+  **不能证明「破盾够爽 / 相位门槛不难不烦 / 一眼就懂」**；真人观感与难度仍需试玩确认。
+- §E4 的通关测试改为「已破盾窗口 + 真实子弹」是**玩法口径变化**，不是放宽断言：
+  闭合态回扫不磨血是刻意设计，破盾全过程由 §F4 单独端到端验证。
+- `docs/demo-90s.md` 的 90 秒分镜仍按旧玩法 / 旧美术撰写，主模式需重剪（本轮未改）。
+- 真人盲玩（6–8 人）、4 分钟真人计时、重开率、Qoder Sites 公网地址与作品帖
+  （硬截止 2026/11/30 18:00）仍为待办；**GitHub 同步 ≠ 大赛提交**。
+- 队友在途的提示词 md 文件移动，总监**未提交、未丢弃**；分支差异未擅自合并或强推。

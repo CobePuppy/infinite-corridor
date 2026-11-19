@@ -404,6 +404,28 @@
       $('boss-fill').style.width = Math.max(0, boss.hp / boss.maxHp * 100) + '%';
     } else bw.classList.add('hidden');
 
+    /* M9：护盾相位条 —— 闭合显示所需圈型与蓄势，暴露显示窗口倒计时，
+     * 重构显示重建进度与下一相位。旧原型无 shield，整块自动隐藏。 */
+    var sb = $('shield-bar'), sh = boss && boss.shield;
+    if (sh && sh.spec) {
+      sb.classList.remove('hidden');
+      sb.dataset.state = sh.state;
+      var spec = sh.spec;
+      if (sh.state === 'closed') {
+        $('shield-state').textContent = '护盾闭合 · 第 ' + spec.phase + ' 相位 · 需' + spec.requiredLabel;
+        $('shield-fill').style.width = Math.min(100, sh.charge / spec.need * 100) + '%';
+        $('shield-timer').textContent = sh.charge.toFixed(1) + '/' + spec.need;
+      } else if (sh.state === 'exposed') {
+        $('shield-state').textContent = '护盾崩解 · 全额输出窗口';
+        $('shield-fill').style.width = Math.min(100, boss.guardOpen / spec.window * 100) + '%';
+        $('shield-timer').textContent = boss.guardOpen.toFixed(1) + 's';
+      } else {
+        $('shield-state').textContent = '护盾重构 · 即将进入第 ' + (spec.phase + 1) + ' 相位';
+        $('shield-fill').style.width = Math.min(100, sh.reform * 100) + '%';
+        $('shield-timer').textContent = '';
+      }
+    } else sb.classList.add('hidden');
+
     var hint = s.room.path_hint || '';
     if (s.phase === 'won' || s.phase === 'dead') hint = '';
     else if (impact) {
@@ -424,7 +446,12 @@
       var streakTag = L.streak > 1 ? ' · 连扫 ×' + L.streak : '';
       if (s.exitActive) hint = '本间已清 · 走到右侧廊口' + streakTag;
       else if (boss && boss.patrol) {
-        if (boss.guardOpen > 0) hint = '护盾已开 · ' + boss.guardOpen.toFixed(1) + ' 秒 · 趁窗口补枪';
+        var sh2 = boss.shield;
+        if (sh2 && sh2.state === 'exposed') hint = '护盾崩解 · ' + boss.guardOpen.toFixed(1) + ' 秒全额输出 · 继续绕圈可吃回扫加成';
+        else if (sh2 && sh2.state === 'reforming') hint = '护盾重构中 · 下一相位需' + sh2.spec.requiredLabel;
+        else if (sh2) hint = '第 ' + sh2.spec.phase + ' 相位 · 用' + sh2.spec.requiredLabel + '闭环破盾（' +
+          sh2.charge.toFixed(1) + '/' + sh2.spec.need + '）';
+        else if (boss.guardOpen > 0) hint = '护盾已开 · ' + boss.guardOpen.toFixed(1) + ' 秒 · 趁窗口补枪';
         else if (boss.patrol.warning > 0) hint = '巡行预警 · 即将走' + (boss.patrol.route ? boss.patrol.route.name : '下一条廊');
         else if (rec && rec.wave) hint = '回扫正在沿路传播' + streakTag;
         else hint = '从另一条廊绕回，回扫打开护盾' + streakTag;
@@ -462,7 +489,8 @@
       stat('战斗用时', result.seconds.toFixed(1) + ' 秒') +
       (result.impact ? stat('通过组数', String(result.waves)) : stat('通过房间', String(result.rooms))) +
       stat('击杀', String(result.kills)) +
-      (loop ? stat('抵达层数', String(result.layers || 1)) + stat('完成闭环', String(result.loops || 0)) :
+      (loop ? stat('抵达层数', String(result.layers || 1)) + stat('完成闭环', String(result.loops || 0)) +
+        stat('护盾崩解', String(result.breaks || 0)) :
         (result.impact && !result.combinations ? stat('最长接力', String(result.bestChain)) :
           (trial ? '' : stat('获得金币', '+' + result.gold))));
     $('end-wallet').classList.toggle('hidden', !!trial);

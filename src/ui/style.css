@@ -89,6 +89,27 @@ canvas { display: block; width: 100%; height: auto; aspect-ratio: 8 / 5; outline
 .hp-fill.low, .boss-fill { background: var(--danger) }
 .boss-bar { margin-top: 5px }
 .boss-track { height: 5px }
+/* M9 巡廊首领护盾相位条：闭合=藕紫蓄势、暴露=琥珀全额窗口、重构=雾青重建 */
+.shield-bar {
+  display: grid; grid-template-columns: minmax(0, 1fr) minmax(56px, 96px) auto;
+  align-items: center; gap: 8px; margin-top: 5px;
+  font-size: 10px; font-family: var(--mono); letter-spacing: .02em;
+}
+.shield-state { color: var(--rare); white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
+.shield-timer { color: var(--muted); min-width: 42px; text-align: right; font-variant-numeric: tabular-nums }
+.shield-track { height: 5px; background: #1E2F3B; border-radius: 2px; overflow: hidden }
+.shield-fill { height: 100%; width: 0; background: var(--rare); transition: width 90ms linear }
+.shield-bar[data-state="exposed"] .shield-state { color: var(--accent); font-weight: 700 }
+.shield-bar[data-state="exposed"] .shield-timer { color: var(--accent) }
+.shield-bar[data-state="exposed"] .shield-fill { background: var(--accent) }
+.shield-bar[data-state="exposed"] .shield-track {
+  box-shadow: 0 0 0 1px var(--accent), 0 0 12px rgba(233,180,76,.45);
+  animation: shield-pulse 700ms ease-in-out infinite alternate;
+}
+.shield-bar[data-state="reforming"] .shield-state { color: var(--guide) }
+.shield-bar[data-state="reforming"] .shield-timer { color: var(--guide) }
+.shield-bar[data-state="reforming"] .shield-fill { background: var(--guide) }
+@keyframes shield-pulse { from { opacity: .62 } to { opacity: 1 } }
 .battle-detail { flex-wrap: wrap; gap: 4px 12px; margin-top: 5px }
 .dash-status b { color: var(--accent) }
 .dash-status b.waiting { color: var(--muted) }
@@ -333,6 +354,8 @@ button:not(:disabled):hover, select:hover { border-color: var(--guide) }
   .unlock-panel { max-height: min(600px, calc(100dvh - 42px)) }
   .unlock-grid, #perk-cards[data-count="3"] { grid-template-columns: repeat(2, minmax(0, 1fr)) }
   .hud { padding: 8px; grid-template-columns: minmax(100px, .82fr) minmax(0, 1.45fr); gap: 5px 10px }
+  .shield-bar { grid-template-columns: minmax(0, 1fr) auto }
+  .shield-track { display: none }
   .hint { min-height: 2.8em }
   .hud-right { grid-column: 1 / -1; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap }
   .hud-stats, .hud-actions { gap: 5px }

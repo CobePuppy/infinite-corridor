@@ -385,11 +385,16 @@ test('§E4 三层通关、层末换层事件、续玩恢复与通关后清档', 
     return s.exitActive;
   }
   function fastBoss() {
-    if (s.enemies.length) { s.enemies[0].hp = 1; }
-    for (var i = 0; i < 10 && s.phase === 'boss'; i++) {
-      lap(s, i % 2 ? 'upper' : 'lower', 'middle');
-      drainWave(s);
-    }
+    /* §E4 验证的是「三层可通关」的编排链路；M9 破盾状态机由 §F 专门端到端验证。
+     * 这里把首领置于已破盾窗口，用真实子弹结算击杀，避免把通关测试变成
+     * 绕圈计时的手感测试（闭合状态下回扫只削护盾、不磨血，是刻意设计）。 */
+    var boss = s.enemies[0];
+    if (!boss) return;
+    boss.guardOpen = 6;
+    boss.hp = 1;
+    s.bullets.push({ x: boss.x, y: boss.y, vx: 0, vy: 0,
+      damage: 30, life: 0.5, crit: false, pierce: 0, hit: [] });
+    tick();
   }
 
   for (var guard = 0; guard < 40 && s.phase !== 'won' && s.phase !== 'dead'; guard++) {
@@ -454,4 +459,252 @@ test('§E5 UI 接线：首页主入口与续玩按钮可点击，LOOP 词条卡�
   assert.ok(els['perk-cards'].children[0]._html.indexOf(P.LOOP[choices[0]].name) !== -1);
   assert.ok(els['perk-title']._text.indexOf('下一圈怎么走') !== -1);
   reset();
+});
+
+/* ============ §F M9 多相位护盾（破盾玩法扩展） ============ */
+/* 直接把三间房标为已清，走真实「出口 → 词条 → choosePerk」链路进层末首领。 */
+function enterBossRoom(s) {
+  for (var n = 0; n < B.roomsPerLayer && s.phase !== 'boss'; n++) {
+    s.enemies.forEach(function (e) { e.dead = true; });
+    s.enemies = [];
+    s.exitActive = true;
+    s.phase = 'playing';
+    walk(s, { x: 886, y: s.recall.layout.hub[1].y });
+    if (s.phase === 'perk') E.choosePerk(s.perkPending[0]);
+  }
+  return s.phase === 'boss';
+}
+/* 用 recall 自身的 record() 回放一条真实闭环，产出 wave，再交给 engine.update()
+ * 的 advanceWave 回调结算 —— 走的仍是真实引擎路径，只是玩家瞬间走完。 */
+function makeWave(s, outId, backId) {
+  var L = s.recall.layout, r = s.recall, rules = LM.waveRules(s);
+  r.wave = null; r.outbound = null; r.current = null;
+  r.origin = 0; r.atHub = 0;
+  R.record(r, L.hub[0], rules);
+  laneRouteRaw(r, L, outId, 0, rules);
+  R.record(r, L.hub[1], rules);
+  laneRouteRaw(r, L, backId, 1, rules);
+  return r.wave;
+}
+/* 完整 mock 2D 上下文：真实调用 render.draw，收集实际设置的色值。 */
+function mockCtx() {
+  var seen = [];
+  var grad = { addColorStop: function (c) { seen.push(String(c)); } };
+  var base = { canvas: { clientWidth: 960, width: 960, height: 600 } };
+  return {
+    seen: seen,
+    ctx: new Proxy(base, {
+      get: function (o, k) {
+        if (k in o) return o[k];
+        if (k === 'createRadialGradient' || k === 'createLinearGradient') {
+          return function () { return grad; };
+        }
+        return function () {};
+      },
+      set: function (o, k, v) {
+        if (k === 'fillStyle' || k === 'strokeStyle' || k === 'shadowColor') seen.push(String(v));
+        o[k] = v; return true;
+      }
+    })
+  };
+}
+
+test('§F1 护盾相位要求轮换、门槛与窗口随破盾次数变化，破盾词条生效', function () {
+  var S = P.BALANCE.loop.shield;
+  var a = LM.shieldSpec(0, {}), b = LM.shieldSpec(1, {}),
+      c = LM.shieldSpec(2, {}), d = LM.shieldSpec(3, {});
+  assert.equal(a.required, 'any');
+  assert.equal(b.required, 'corner');
+  assert.equal(c.required, 'long');
+  assert.equal(d.required, 'short');
+  assert.equal(LM.shieldSpec(4, {}).required, 'any', '相位应循环');
+  assert.equal(a.need, S.baseNeed);
+  assert.ok(LM.shieldSpec(4, {}).need > a.need, '破盾越多，下一相位门槛越高');
+  assert.ok(c.window < a.window && c.window >= S.windowMin);
+  assert.ok(d.speedMul > a.speedMul && d.speedMul <= S.speedCap);
+  var perk = LM.shieldSpec(2, {
+    p_loop_breach: 1, p_loop_window: 2, p_loop_shard: 2, p_loop_overdrive: 1
+  });
+  assert.equal(perk.need, c.need - 1);
+  assert.ok(perk.window > c.window);
+  assert.ok(perk.weakCharge > c.weakCharge);
+  assert.ok(perk.exposedWaveMul > c.exposedWaveMul);
+  assert.equal(LM.SHIELD_LABEL.corner, '折角圈');
+  Object.keys(P.LOOP).filter(function (id) { return P.LOOP[id].tag === '破盾'; })
+    .forEach(function (id) { assert.ok(P.IDS.indexOf(id) === -1, id + ' 不得污染冻结池'); });
+});
+
+test('§F2 waveTags 从波与廊道几何识别短圈 / 长圈 / 折角圈', function () {
+  var fork = LM.makeLayout(0, 0);
+  var short = LM.waveTags({ length: 1724, routes: ['upper', 'middle'] }, fork);
+  assert.equal(short.short, true);
+  assert.equal(short.long, false);
+  assert.equal(short.corner, false, 'fork 直上廊只有 2 个中间折点，不算折角圈');
+  var long = LM.waveTags({ length: 1952, routes: ['lower', 'middle'] }, fork);
+  assert.equal(long.long, true);
+  assert.equal(long.corner, true);
+  var bent = LM.waveTags({ length: 1876, routes: ['upper', 'middle'] }, LM.makeLayout(1, 0));
+  assert.equal(bent.corner, true, '折上廊应识别为折角圈');
+  assert.equal(LM.matchesShield(short, 'any'), true);
+  assert.equal(LM.matchesShield(short, 'short'), true);
+  assert.equal(LM.matchesShield(short, 'long'), false);
+  assert.equal(LM.matchesShield(short, 'corner'), false);
+  assert.equal(LM.matchesShield(long, 'corner'), true);
+  assert.equal(LM.matchesShield(long, 'long'), true);
+});
+
+test('§F3 首领入场即处于闭合护盾第 1 相位，破盾词条随本局构筑生效', async function () {
+  reset();
+  var s = await E.startRun({ loop: true, seed: 'shield-init', theme: 'geometry',
+    onEvent: function () {} });
+  s.player.invuln = Infinity;
+  assert.equal(enterBossRoom(s), true, '应能进入层末首领房');
+  var boss = s.enemies[0];
+  assert.ok(boss && boss.shield, '长局首领应带多相位护盾');
+  assert.equal(boss.shield.state, 'closed');
+  assert.equal(boss.shield.breaks, 0);
+  assert.equal(boss.shield.charge, 0);
+  assert.equal(boss.shield.spec.required, 'any');
+  assert.equal(boss.shield.spec.need, P.BALANCE.loop.shield.baseNeed);
+  assert.equal(boss.guardOpen, 0);
+  assert.equal(s.breakFlash, 0);
+  assert.equal(s.bossPhase, 1, '长局应屏蔽旧的 50% 血切 P2');
+  reset();
+});
+
+test('§F4 闭合→崩解→暴露→重构→下一相位：真实帧循环走通且圈型门槛生效', async function () {
+  reset();
+  var events = [];
+  var s = await E.startRun({ loop: true, seed: 'shield-e2e', theme: 'geometry',
+    onEvent: function (t, p) { events.push({ t: t, p: p }); } });
+  s.player.invuln = Infinity;
+  assert.equal(enterBossRoom(s), true);
+  var boss = s.enemies[0];
+  boss.hp = boss.maxHp = 9999;      // 不让首领在测试中途死亡
+  boss.timer = Infinity;            // 停掉弹幕，隔离状态机
+  boss.shield.spec.window = 999;    // 窗口不在测试帧内自然归零，便于分阶段断言
+
+  /* ① 闭合：回扫削蓄势，但绝不磨血 */
+  var hp0 = boss.hp, c0 = boss.shield.charge;
+  assert.ok(makeWave(s, 'upper', 'middle'), '应生成闭环波');
+  drainWave(s);
+  assert.ok(boss.shield.charge > c0, '回扫应削护盾蓄势');
+  assert.equal(boss.hp, hp0, '闭合状态回扫不得磨血');
+  assert.ok(events.some(function (e) { return e.t === 'bossShieldCharge'; }));
+
+  /* ② 补到临界，再一圈真实闭环触发破盾 */
+  boss.shield.charge = boss.shield.spec.need - 0.2;
+  makeWave(s, 'upper', 'middle'); drainWave(s);
+  assert.equal(boss.shield.state, 'exposed', '蓄势满应崩解');
+  assert.ok(boss.guardOpen > 0, '崩解应打开全额输出窗口');
+  assert.equal(s.loop.shieldBreaks, 1);
+  assert.ok(events.some(function (e) { return e.t === 'bossShieldBreak'; }));
+
+  /* ③ 暴露窗口：子弹全额生效，窗口内继续绕圈吃到回扫加成 */
+  var before = boss.hp;
+  s.bullets.push({ x: boss.x, y: boss.y, vx: 0, vy: 0,
+    damage: 10, life: 0.5, crit: false, pierce: 0, hit: [] });
+  tick();
+  assert.equal(before - boss.hp, 10, '窗口内子弹应全额生效（不再是 0.34 倍）');
+  var before2 = boss.hp;
+  makeWave(s, 'upper', 'middle'); drainWave(s);
+  assert.ok(before2 - boss.hp > B.damage, '窗口内回扫应吃 exposedWaveMul 加成');
+
+  /* ④ 窗口结束 → 重构 → 下一相位，抬高门槛并换圈型要求 */
+  boss.guardOpen = 0.01;
+  tick();
+  assert.equal(boss.shield.state, 'reforming');
+  assert.ok(events.some(function (e) { return e.t === 'bossShieldClose'; }));
+  for (var i = 0; i < 120; i++) tick();
+  assert.equal(boss.shield.state, 'closed', '重构完成应回到闭合');
+  assert.equal(boss.shield.breaks, 1);
+  assert.equal(boss.shield.spec.required, 'corner', '第 2 相位应要求折角圈');
+  assert.ok(boss.shield.spec.speedMul > 1, '重构后巡逻应提速');
+  assert.ok(events.some(function (e) { return e.t === 'bossShieldReform'; }));
+
+  /* ⑤ 相位 2：直上廊短圈不匹配 → 折算蓄势；下廊折角圈匹配 → 全额 */
+  var c1 = boss.shield.charge;
+  makeWave(s, 'upper', 'middle'); drainWave(s);
+  assert.ok(boss.shield.charge - c1 > 0 && boss.shield.charge - c1 < 1,
+    '圈型不符应只给折算蓄势');
+  assert.ok(events.some(function (e) { return e.t === 'bossShieldCharge' && e.p.matched === false; }));
+  var c2 = boss.shield.charge;
+  makeWave(s, 'lower', 'middle'); drainWave(s);
+  assert.ok(boss.shield.charge - c2 >= 1, '折角圈应全额蓄势');
+  assert.ok(events.some(function (e) { return e.t === 'bossShieldCharge' && e.p.matched === true; }));
+  reset();
+});
+
+test('§F5 HUD 护盾条按三态显示相位、蓄势与窗口倒计时', async function () {
+  reset();
+  var s = await E.startRun({ loop: true, seed: 'shield-hud', theme: 'geometry',
+    onEvent: function () {} });
+  s.player.invuln = Infinity;
+  assert.equal(enterBossRoom(s), true);
+  var boss = s.enemies[0];
+  S.updateHud(s);
+  assert.equal(els['shield-bar'].classList.contains('hidden'), false);
+  assert.equal(els['shield-bar'].dataset.state, 'closed');
+  assert.ok(els['shield-state']._text.indexOf('第 1 相位') !== -1);
+  assert.ok(els['shield-state']._text.indexOf('任意闭环') !== -1);
+
+  boss.shield.state = 'exposed';
+  boss.guardOpen = 2.4;
+  boss.shield.spec.window = 3.6;
+  S.updateHud(s);
+  assert.equal(els['shield-bar'].dataset.state, 'exposed');
+  assert.ok(els['shield-timer']._text.indexOf('2.4') !== -1);
+  assert.ok(els['shield-state']._text.indexOf('崩解') !== -1);
+
+  boss.shield.state = 'reforming';
+  boss.shield.reform = 0.5;
+  S.updateHud(s);
+  assert.equal(els['shield-bar'].dataset.state, 'reforming');
+  assert.ok(els['shield-state']._text.indexOf('重构') !== -1);
+  reset();
+});
+
+test('§F6 破盾三态与爆发信号真实渲染不抛异常，且画面确实分流', async function () {
+  reset();
+  var s = await E.startRun({ loop: true, seed: 'shield-render', theme: 'geometry',
+    onEvent: function () {} });
+  s.player.invuln = Infinity;
+  assert.equal(enterBossRoom(s), true);
+  var boss = s.enemies[0];
+  boss.shield.spec.window = 3.6;
+  var sig = [];
+  [['closed', 0, 0], ['exposed', 2.4, 0], ['reforming', 0, 0.5]].forEach(function (row) {
+    boss.shield.state = row[0];
+    boss.guardOpen = row[1];
+    boss.shield.reform = row[2];
+    s.breakFlash = 0;
+    var m = mockCtx();
+    assert.doesNotThrow(function () { C.ui.render.draw(m.ctx, s, 0.8, null, null); });
+    assert.ok(m.seen.length > 20, row[0] + ' 应产生实际绘制色值');
+    sig.push(m.seen.join('|'));
+  });
+  assert.notEqual(sig[0], sig[1], '闭合 / 暴露画面必须不同');
+  assert.notEqual(sig[1], sig[2], '暴露 / 重构画面必须不同');
+  /* 全屏破盾爆发信号 */
+  s.breakFlash = 1;
+  var burstMock = mockCtx();
+  assert.doesNotThrow(function () { C.ui.render.draw(burstMock.ctx, s, 0.8, null, null); });
+  assert.notEqual(burstMock.seen.join('|'), sig[0], '破盾爆发应叠加额外画面');
+  reset();
+});
+
+test('§F7 事件、HUD DOM 与 CSS 接线静态契约', function () {
+  var mainSrc = fs.readFileSync(path.join(ROOT, 'src/ui/main.js'), 'utf8');
+  ['bossShieldBreak', 'bossShieldReform', 'bossShieldCharge', 'bossShieldClose', 'bossShieldHit']
+    .forEach(function (ev) {
+      assert.ok(mainSrc.indexOf("case '" + ev + "'") !== -1, ev + ' 事件应接上反馈');
+    });
+  var html2 = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
+  ['shield-bar', 'shield-state', 'shield-fill', 'shield-timer'].forEach(function (id) {
+    assert.ok(html2.indexOf('id="' + id + '"') !== -1, id + ' 应存在于 HUD');
+  });
+  var css = fs.readFileSync(path.join(ROOT, 'src/ui/style.css'), 'utf8');
+  assert.ok(css.indexOf('.shield-bar') !== -1 && css.indexOf('[data-state="exposed"]') !== -1);
+  var renderSrc = fs.readFileSync(path.join(ROOT, 'src/ui/render.js'), 'utf8');
+  assert.ok(renderSrc.indexOf('drawBossShield') !== -1 && renderSrc.indexOf('drawBreakBurst') !== -1);
 });

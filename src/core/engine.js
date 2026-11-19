@@ -546,6 +546,12 @@
     if (boss) {
       boss.r = 28; boss.guardOpen = 0; boss.shieldFlash = 0;
       boss.patrol = { hub: 1, cursor: 0, phase: 1, route: null, warning: 0 };
+      /* M9：多相位护盾状态机。旧 prototype 首领不带 shield，行为完全不变。 */
+      boss.shield = {
+        state: 'closed', breaks: 0, charge: 0,
+        flash: 0, reform: 0,
+        spec: C.core.loop.shieldSpec(0, s.perks)
+      };
     }
     s.enemies = boss ? [boss] : [];
     s.bullets = []; s.enemyBullets = []; s.exitActive = false;
@@ -554,7 +560,8 @@
     s.player.vx = s.player.vy = 0;
     s.transition = 0.55;
     A('boss');
-    emit(s, 'bossEnter', { boss: s.run.boss, phase: 1, loop: true, layer: L.layer });
+    emit(s, 'bossEnter', { boss: s.run.boss, phase: 1, loop: true, layer: L.layer,
+                           shield: boss ? boss.shield.spec : null });
   }
 
   function advanceLoopLayer(s) {
@@ -584,11 +591,12 @@
     state = createState(run, []);
     state.source = 'loop';
     state.onEvent = opts.onEvent || null;
+    state.breakFlash = 0;                 /* M9：全屏破盾爆发信号，render 只读 */
     state.loop = {
       plan: LM.plan(seed),
       layer: saved ? saved.layer : 1,
       roomInLayer: saved ? saved.roomInLayer : 0,
-      streak: 0, streakTimer: 0, goldPerKill: 0,
+      streak: 0, streakTimer: 0, goldPerKill: 0, shieldBreaks: 0,
       continued: !!saved
     };
     if (saved) {
@@ -669,7 +677,9 @@
       (s.damagePops || (s.damagePops = [])).push(e.hitPop);
     }
     /* T24-B Boss 两阶段：hp 跌破 50% 且仍存活 → 切 P2（弹幕/移速在 AI 处变化） */
-    if (e.isBoss && (s.bossPhase || 1) === 1 && e.hp > 0 && e.hp <= e.maxHp * B.bossPhase2At) {
+    /* M9：长局首领用护盾相位承载节奏，屏蔽旧的「50% 血切 P2」，
+     * 避免两个「阶段」概念同时弹幕/提示。经典模式（tests/fullsuite §B3）不受影响。 */
+    if (e.isBoss && !s.loop && (s.bossPhase || 1) === 1 && e.hp > 0 && e.hp <= e.maxHp * B.bossPhase2At) {
       s.bossPhase = 2;
       s.shake = Math.max(s.shake, 18);
       burst(s, e.x, e.y, '#E9A23B', 26, 300);
@@ -771,6 +781,7 @@
         layers: s.loop.layer, gold: earned, loopGold: s.gold,
         rooms: (s.loop.layer - 1) * B.loop.roomsPerLayer + s.loop.roomInLayer,
         loops: s.recall ? s.recall.loops : 0,
+        breaks: s.loop.shieldBreaks || 0,
         summary: cleared ? '三层回廊走通了。' :
           ('停在第 ' + s.loop.layer + ' 层 · 回廊记得你走过的路。')
       });
@@ -877,6 +888,94 @@
     emit(s, 'loopClosed', { loops: s.recall.loops, streak: L.streak, heal: rw.heal });
   }
 
+  /* ---------- M9：巡廊首领多相位护盾 ----------
+   * 状态机挂在 boss 实例（不是 state）：closed → exposed → reforming → closed(下一相位)。
+   * guardOpen > 0 仍表示「可被伤害」，因此 damageEnemy / 子弹削弱 / HUD 判定
+   * 全部无需改动；差别是：闭合时回扫只削「护盾蓄势」而不磨血，只有破盾后的
+   * 窗口才是真输出，且每个相位要求不同圈型，逼玩家在战斗中改走法。 */
+  function loopBoss(s) {
+    for (var i = 0; i < s.enemies.length; i++) {
+      if (!s.enemies[i].dead && s.enemies[i].patrol && s.enemies[i].shield) return s.enemies[i];
+    }
+    return null;
+  }
+
+  function breakShield(s, boss) {
+    var sh = boss.shield, spec = sh.spec;
+    sh.state = 'exposed';
+    sh.charge = 0;
+    sh.flash = 1;
+    sh.reform = 0;
+    boss.guardOpen = spec.window;
+    boss.shieldFlash = 0.35;
+    s.shake = Math.max(s.shake, 20);
+    s.breakFlash = 1;                 /* 全屏爆发信号，drawBreakBurst 消费 */
+    s.loop.shieldBreaks = (s.loop.shieldBreaks || 0) + 1;
+    burst(s, boss.x, boss.y, '#E9A23B', 34, 330);
+    burst(s, boss.x, boss.y, '#D9644B', 20, 250);
+    A('clear'); A('boss');
+    emit(s, 'bossShieldBreak', {
+      phase: spec.phase, breaks: sh.breaks, window: spec.window,
+      required: spec.required, requiredLabel: spec.requiredLabel,
+      next: spec.phase + 1
+    });
+  }
+
+  function onWaveHitLoopBoss(s, boss, wave, damage) {
+    var sh = boss.shield, spec = sh.spec, LM = C.core.loop;
+    if (sh.state === 'reforming') {
+      boss.shieldFlash = 0.18;       /* 重构中 immune，只给弹开反馈 */
+      return;
+    }
+    if (sh.state === 'exposed') {
+      /* 窗口内继续绕圈：回扫吃加成，边跑边打比站桩更划算。 */
+      damageEnemy(s, boss, Math.round(damage * spec.exposedWaveMul), false, 1);
+      if (s.loop.goldPerKill && boss.dead) s.gold += s.loop.goldPerKill;
+      emit(s, 'bossShieldHit', { exposed: true });
+      return;
+    }
+    var tags = LM.waveTags(wave, s.recall.layout);
+    var matched = LM.matchesShield(tags, spec.required);
+    sh.charge += matched ? 1 : spec.weakCharge;
+    boss.shieldFlash = matched ? 0.24 : 0.12;
+    emit(s, 'bossShieldCharge', {
+      matched: matched, required: spec.required, requiredLabel: spec.requiredLabel,
+      charge: sh.charge, need: spec.need, tags: tags
+    });
+    if (sh.charge >= spec.need) breakShield(s, boss);
+  }
+
+  function updateLoopShield(s, dt) {
+    var boss = loopBoss(s);
+    if (!boss) return;
+    var sh = boss.shield;
+    sh.flash = Math.max(0, sh.flash - dt * 2.2);
+    if (sh.state === 'exposed') {
+      boss.guardOpen = Math.max(0, boss.guardOpen - dt);
+      if (boss.guardOpen === 0) {
+        sh.state = 'reforming';
+        sh.reform = 0;
+        emit(s, 'bossShieldClose', { phase: sh.spec.phase });
+      }
+    } else if (sh.state === 'reforming') {
+      sh.reform = Math.min(1, sh.reform + dt / sh.spec.reformTime);
+      if (sh.reform >= 1) {
+        sh.breaks += 1;
+        sh.spec = C.core.loop.shieldSpec(sh.breaks, s.perks);
+        sh.state = 'closed';
+        sh.charge = 0;
+        sh.reform = 0;
+        sh.flash = 0.35;
+        boss.guardOpen = 0;
+        emit(s, 'bossShieldReform', {
+          phase: sh.spec.phase, required: sh.spec.required,
+          requiredLabel: sh.spec.requiredLabel, need: sh.spec.need,
+          window: sh.spec.window
+        });
+      }
+    }
+  }
+
   /* ---------- 每帧更新 ---------- */
   function update(dt, input) {
     var s = state;
@@ -898,6 +997,7 @@
     }
     s.shake = Math.max(0, s.shake - dt * 42);
     s.transition = Math.max(0, s.transition - dt);
+    if (s.breakFlash > 0) s.breakFlash = Math.max(0, s.breakFlash - dt * 1.7);
 
     s.particles = s.particles.filter(function (p) {
       p.life -= dt; p.x += p.vx * dt; p.y += p.vy * dt;
@@ -925,6 +1025,7 @@
       s.loop.streakTimer = Math.max(0, s.loop.streakTimer - dt);
       if (s.loop.streakTimer === 0) s.loop.streak = 0;
     }
+    if (s.loop && s.phase === 'boss') updateLoopShield(s, dt);
     p.invuln = Math.max(0, p.invuln - dt);
     p.fireCd = Math.max(0, p.fireCd - dt);
     p.dashCd = Math.max(0, p.dashCd - dt);
@@ -1110,14 +1211,18 @@
         if (e.patrol) {
           e.guardOpen = Math.max(0, e.guardOpen - dt);
           e.shieldFlash = Math.max(0, e.shieldFlash - dt);
-          var patrolSpeed = (s.loop ? B.loop.patrolSpeed : B.recall.patrolSpeed) * (inBossP2 ? B.bossPhase2Speed : 1);
+          var shieldMul = (e.shield && e.shield.spec) ? e.shield.spec.speedMul : 1;
+          var patrolSpeed = (s.loop ? B.loop.patrolSpeed : B.recall.patrolSpeed) *
+            (inBossP2 ? B.bossPhase2Speed : 1) * shieldMul;
           var pos = C.core.recall.advancePatrol(e, dt, patrolSpeed,
             inBossP2 ? 2 : 1, s.recall);
           e.vx = (pos.x - e.x) / dt; e.vy = (pos.y - e.y) / dt;
         }
         var canShoot = !!s.recall || clearPath(e.x, e.y, p.x, p.y, 6);
         if (!canShoot) moveToward(e, enemyWaypoint(s, e, p), sp * 0.7, dt);
-        if (e.timer <= 0 && canShoot) {
+        /* M9：破盾窗口与重构期间首领停火，把这段时间真正让给玩家输出。 */
+        var shieldHold = e.shield && e.shield.state !== 'closed';
+        if (e.timer <= 0 && canShoot && !shieldHold) {
           e.timer = e.isBoss ? (inBossP2 ? B.bossPhase2Cd : 1.15) : rand(1.4, 2.1);
           var bl = Math.hypot(toX, toY) || 1;
           s.enemyBullets.push({
@@ -1163,6 +1268,12 @@
       var loopMode = !!s.loop;
       var guardWindow = loopMode ? B.loop.guardWindow : B.recall.guardWindow;
       C.core.recall.advanceWave(s.recall, dt, p, s.enemies, function (enemy, damage) {
+        /* M9：长局巡廊首领走多相位护盾；闭合时回扫削蓄势不磨血，
+         * 暴露时回扫吃加成。旧原型仍走原来的「一刀开窗」逻辑。 */
+        if (loopMode && enemy.patrol && enemy.shield) {
+          onWaveHitLoopBoss(s, enemy, s.recall.wave, damage);
+          return;
+        }
         if (enemy.patrol) {
           enemy.guardOpen = guardWindow;
           A('clear');
