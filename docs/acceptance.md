@@ -38,7 +38,9 @@
   `tests/fullsuite.js`（M5 跨层接线 + 节奏量化 + 2026-11-18 §A7 B 板块回归 + 队友 B1 固定用例）、
   `tests/recall.js` / `tests/impact.js` / `tests/enemy-trial.js` / `tests/combat-guide.js`、
   `docs/demo-90s.md`（90 秒高光蒙太奇与记录表）、`docs/requirements-2026-11-18.md`（需求台账，
-  含 2026-11-19 版本对齐章节）、`docs/参赛改进与美术方向.md`（玩法重设计与验收口径）。
+  含 2026-11-19 版本对齐章节）、`docs/参赛改进与美术方向.md`（玩法重设计与验收口径）、
+  `docs/盲玩验收包.md` + `盲玩交接卡.html` + `盲玩记录表.csv`（2026-11-19 新增真人盲玩验收三件套，
+  **只提供工具与阈值，不产出验收结论**）。
 
 ### 当前集成快照（供比对，非验收结论）
 
