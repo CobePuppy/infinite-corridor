@@ -141,7 +141,7 @@
         screens.toast('起点已定 · 绕一圈，回到这里兑现', 1800);
         break;
       case 'freeReject':
-        screens.toast('圈太小 · 走近一点再绕（面积 ' + p.area + '）', 1600);
+        screens.toast('圈太小 · 起点已重设，绕大一点再回来（面积 ' + p.area + '）', 1800);
         break;
       case 'perfectDodge':
         if (p.kind === 'perfect') screens.toast('完美闪避 · 增伤 + 冷却缩减', 1400);

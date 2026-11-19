@@ -620,7 +620,9 @@
     FW.reset(f);
     s.closure = null; s.breakFlash = 0;
     s.transition = 0.45;
-    s.player.x = 480; s.player.y = 300;
+    /* M12：出生点必须落在自由房的可走区域。旧值 (480,300) 正好嵌在中央掩体
+     * (440,268,80,64) 内，首帧会被 collideWalls 弹出 44px（probe-play.cjs §A）。 */
+    s.player.x = 400; s.player.y = 300;
     s.player.vx = s.player.vy = 0;
     s.player.invuln = Math.max(s.player.invuln, 0.8);
     emit(s, 'roomEnter', { index: f.roomInLayer, room: s.room, roomType: 'normal',
@@ -862,7 +864,11 @@
     var closed = FW.close(f, p);
     if (closed && closed.type === 'closed') onFreeClosed(s, closed);
     else if (closed && closed.rejected === 'area') {
-      emit(s, 'freeReject', { reason: 'area', area: closed.area }); FW.reset(f);
+      /* M12：旧逻辑 reset 后 armed=false，玩家松开 E 就再也画不了下一圈
+       * （probe-play.cjs §C：后续最大采样点恒为 0）。拒绝点必在起点 30px 内，
+       * 直接以当前位置重设起点，玩家继续绕大一点即可，无需再按一次 E。 */
+      emit(s, 'freeReject', { reason: 'area', area: Math.round(closed.area) });
+      FW.reset(f); FW.arm(f, p);
     }
     /* 射击：子弹降级，吃地效与完美闪避 buff */
     if (input.fire && p.fireCd <= 0) {
