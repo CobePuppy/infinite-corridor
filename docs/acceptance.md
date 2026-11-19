@@ -33,10 +33,18 @@
   墙内 / 不可达 / 中心 / 贴脸 / 敌间重叠五类缺陷全部为 0 → PASS。实跑新基线
   `smoke 20/20`、`m2m3 58/0/0`、`fullsuite 78/78`、`impact 21/21`、`recall 9/9`、
   `combat-guide 5/5`、`enemy-trial 25/25`。详见文末「附录：2026-11-19 版本对齐」。
+- **2026-11-19 回廊长局本体改造（开发总监）**：用户明确要求不再停留在 Plan / 文档 / 验收包，
+  直接做游戏本体玩法优化，并授权大改玩法与底层引擎。本轮新增 `src/core/loop.js` 规则层，
+  泛化 `recall.js`，在 `engine.js` 接入长局状态机，把「绕一圈，从另一侧回击」从单房原型
+  升级为**主模式「回廊长局」**（三层 × 三间 + 层末巡廊首领、路线词条、长短圈 / 折角分流、
+  连扫蓄势、射击退为牵制、层末存档续玩），并接线首页 / HUD / 词条页 / 渲染 / 主循环。
+  新增 `tests/loop.js` **16/16**，八套基线全绿；验证全程纯 Node + DOM stub，
+  **零端口、零后台进程、零浏览器操作**。详见文末「附录：回廊长局本体改造验收」。
 - 「当前依据」只记录当前代码快照下自动化测试的客观结果，供总监复跑时比对，**不替代验收结论**。
 - 相关资产：`tests/smoke.js`（M1 基线，20/20，禁止改动）、`tests/m2m3.js`（M4 验收资产）、
   `tests/fullsuite.js`（M5 跨层接线 + 节奏量化 + 2026-11-18 §A7 B 板块回归 + 队友 B1 固定用例）、
-  `tests/recall.js` / `tests/impact.js` / `tests/enemy-trial.js` / `tests/combat-guide.js`、
+  `tests/recall.js` / `tests/impact.js` / `tests/enemy-trial.js` / `tests/combat-guide.js` /
+  `tests/loop.js`（M7 回廊长局 16 项端到端回归）、
   `docs/demo-90s.md`（90 秒高光蒙太奇与记录表）、`docs/requirements-2026-11-18.md`（需求台账，
   含 2026-11-19 版本对齐章节）、`docs/参赛改进与美术方向.md`（玩法重设计与验收口径）、
   `docs/盲玩验收包.md` + `盲玩交接卡.html` + `盲玩记录表.csv`（2026-11-19 新增真人盲玩验收三件套，
@@ -47,7 +55,7 @@
 | 项 | 值 |
 |---|---|
 | 代码基线 | `origin/main` = `c1d81e7`（Merge PR #1）；当前工作分支 `Luciandeng` = `dc98810`，比 `origin/main` 多 2 个未合并提交 |
-| 新增模块 / 资产 | `src/core/recall.js` / `impact.js` / `enemy-trial.js`、`src/ui/combat-guide.js`；4 套新测试；4 份设计资料与 `ab-evidence` / `ui-evidence` 证据截图 |
+| 新增模块 / 资产 | `src/core/recall.js` / `impact.js` / `enemy-trial.js` / **`loop.js`**、`src/ui/combat-guide.js`；5 套新测试；4 份设计资料与 `ab-evidence` / `ui-evidence` 证据截图 |
 | `node tests/smoke.js` | **20 passed / 0 failed**（冻结基线未动） |
 | `node tests/m2m3.js` | **58 passed / 0 failed / 0 waiting**（含 360/360 组 validate、四类降级均 `source='fallback'`） |
 | `node tests/fullsuite.js` | **78 passed / 0 failed**（原 63 项 + 队友新增的 B1 封闭墙圈固定用例等） |
@@ -55,8 +63,9 @@
 | `node --test tests/recall.js` | **9/9**（廊道回扫、站位 A/B、首领和重开） |
 | `node --test tests/combat-guide.js` | **5/5**（走位提示、出手条件及清除时机） |
 | `node --test tests/enemy-trial.js` | **25/25**（单房 A/B、预警、恢复和两种预设） |
+| `node --test tests/loop.js` | **16/16**（M7：廊道几何 / 三层编排 / 闭环与波 / 存档 / 端到端 / UI 接线） |
 | 浏览器实拍 | M5 四主题战斗画面 + 2026-11-18 `hud / pause / perk / unlock` 四张一次性无头截图 + 队友 `ui-evidence` 两种视口 8/8；不起端口 / 不起后台进程 |
-| 备注 | 2026-11-17 完成 M5 集成验收；2026-11-18 完成 B 板块 8 条修复；2026-11-19 队友补齐 B1 可达区域缺陷、总监独立复核 320 局 PASS。单局 240s±30s 属真人手感范畴，理论模型不作为验收结论；**真人盲玩（6–8 人）、扩首层、M2 长局+存档、Qoder Sites 提交仍待办** |
+| 备注 | 2026-11-17 完成 M5 集成验收；2026-11-18 完成 B 板块 8 条修复；2026-11-19 队友补齐 B1 可达区域缺陷、总监独立复核 320 局 PASS；**同日完成 M7 回廊长局本体改造，`loop 16/16`**。单局 240s±30s 属真人手感范畴，理论模型与 Node 端到端均不作为手感验收结论；**真人盲玩（6–8 人）、扩首层真人复核、90 秒分镜按新玩法重剪、Qoder Sites 提交仍待办** |
 
 ---
 
@@ -386,3 +395,77 @@ M2 的「长局 + 存档」作为**已定方向**写进台账排下一轮，本�
   （硬截止 2026/11/30 18:00）→ ⑤ 分支治理（`Luciandeng` 2 个提交未并入 main，另有两条平行历史，
   须用户或队友确认，总监不擅自合并 / 强推）。
 - **GitHub 同步 ≠ 大赛提交**；`§8` 第 6–8 条（真人计时 / 90 秒视频 / 大赛提交）仍为待办。
+
+---
+
+## 附录：回廊长局本体改造验收（2026-11-19 · 开发总监）
+
+### 一、触发与范围
+
+用户明确指出上一轮（盲玩验收包）**仍是 Plan / 文档 / 验收工具，不是游戏本体优化**，
+并要求「往这个方向接着做，可以大改玩法甚至底层引擎都是可以的」。因此本轮不做新排期、
+不做验收包，直接改玩法本体：把队友《参赛改进与美术方向.md》里只在 prototype 按钮里的
+「绕一圈，从另一侧回击」升级为**首页第一入口的主模式「回廊长局」**。原射击长局保留为
+「经典射击」，单房 A/B、击飞接力、回扫原型全部保留在「试玩」区，互不回归。
+
+### 二、落盘清单（逐文件可核对）
+
+| 文件 | 改动 |
+|---|---|
+| `src/core/loop.js` | **新建**规则层：`SAVE_KEY`、固定墙骨架、4 套参数化廊型（`fork` / `switchback` / `deepwell` / `twinbend`）、`makeLayout()` / `validate()` 几何自检、`plan()` 三层九间编排、`waveRules()`、`offer()` 路线词条候选、`loopRewards()`、`save()` / `load()` / `hasSave()` / `clearSave()` / `saveLabel()` |
+| `src/core/recall.js` | 泛化为可接收任意 loop 布局：`DEFAULT` 保底、`create(layout)`、`clearLine(layout,…)`、`record(r,p,rulesOrPerk)` 兼容旧词条 id 与新规则对象、`chaseTarget` / `advancePatrol` 使用对应 layout。**旧 prototype 接口零改动**，`tests/recall.js` 9/9 原样通过 |
+| `src/core/perks.js` | 新增独立 `LOOP` 路线词条池（8 条，不污染冻结的 `TABLE` / `IDS` 与局外解锁）与 `BALANCE.loop` 数值段；`derive()` 前 10 项表达式逐字未改 |
+| `src/core/engine.js` | 接入 `startLoop()` / `setupLoopRoom()` / `setupLoopBoss()` / `onLoopClosed()` / `advanceLoopLayer()`；`startRun({loop:true})` 分流；`update()` 计算 `loopRules` 与连扫窗口；闭环触发回扫奖励；子弹在长局按 `bulletMul=0.34` 降级；回扫对首领 1.5 倍并破盾；清 Boss 换层；`choosePerk()` 走 `LOOP` 池；`finishRun()` 清档；受伤清空连扫 |
+| `index.html` | 首页主入口改「回廊长局」featured，新增「继续回廊」，原长局改称「经典射击」；`src/core/loop.js` 插入脚本顺序（`recall.js` 之后、`enemy-trial.js` 之前） |
+| `src/ui/screens.js` | `perkDefinition()` 识别 `LOOP` 池；`refreshLoopContinue()`；词条页「下一圈怎么走」文案；HUD 层级前缀 / 连扫 / 护盾提示；结算页显示抵达层数；`init()` 接 `onLoop` / `onLoopContinue` |
+| `src/ui/main.js` | `runStart` / `loopClosed` / `loopLayer` 事件 toast；`perkOffer` 传 `loop`；`restart()` 重开长局 |
+| `src/ui/render.js` | `drawLoopLanes()` 把三条廊道画成可见的「未走地面状态」；出口、廊口光环、首领预警改用 `s.recall.layout` |
+| `src/ui/style.css` | 补 `.mode-entry.continue` 续玩按钮配色 |
+| `tests/loop.js` | **新建** 16 项回归（§A 几何 / §B 编排与词条 / §C 闭环与波 / §D 存档 / §E 帧循环端到端 + UI 接线） |
+
+### 三、玩法规则（与设计文档逐条对齐）
+
+- **三层 × 三间 + 层末巡廊首领**：`plan()` 每层洗牌 4 套廊型取 3 间，层末 `setupLoopBoss()`。
+- **闭环即攻击**：`recall.record()` 在玩家从一条廊去、另一条廊回、跨越原点时触发 `startWave()`，
+  回扫沿**去程路线逆向**传播；`validate()` 保证每条 lane 不与墙相交。
+- **折角断射线 / 廊口选路**：`switchback` / `twinbend` 有额外折角，`clearLine()` 按当前 layout 判定；
+  上廊短、下廊长，`longDistance` / `shortDistance` 分流长圈与短圈伤害。
+- **路线词条**：`LOOP` 池的折角扩散 / 长程蓄力 / 短圈聚锋 / 归廊 / 贪金 / 迅扫等改变**走法收益**，
+  不是单纯加数值；词条页标题改为「下一圈怎么走」。
+- **连续闭环蓄势**：26 秒窗口内累积，最高 ×3，受伤立即清零（早期设 7 秒短于一圈，
+  连扫永远停在 ×1，等于机制不存在，已修正）。
+- **射击退为牵制**：长局普通子弹伤害 ×0.34；只有巡廊首领护盾被回扫打开时才全额生效，
+  迫使玩家用闭环而非站桩输出。
+- **存档续玩**：`corridor.loop.save.v1` 存层 / 房 / HP / 金币 / 词条 / 时间 / 主题，
+  换房与换层自动写；首页「继续回廊」恢复；通关或死亡清档。
+
+### 四、验收结果（实跑，不采信自报）
+
+| 项 | 结果 |
+|---|---|
+| `node --check`（全部 `src/**/*.js`） | 通过 |
+| `node tests/smoke.js` | **20/20**（M1 冻结基线未动） |
+| `node tests/m2m3.js` | **58/0/0**（360/360 组校验） |
+| `node tests/fullsuite.js` | **78/78**（按新 `index.html` 脚本顺序加载 `loop.js` 后仍全绿） |
+| `node --test tests/recall.js` | **9/9**（泛化后旧接口零回归） |
+| `node --test tests/impact.js` | **21/21** |
+| `node --test tests/combat-guide.js` | **5/5** |
+| `node --test tests/enemy-trial.js` | **25/25** |
+| `node --test tests/loop.js` | **16/16** |
+| 端到端链路 | 开局 → 绕圈清房 → 选词条 → 换房换廊型 → 首领破盾 → 换层 → 存档 → 续玩，全链路真实 `engine.update()` 跑通（探针先跑通后固化为 `tests/loop.js`，探针为工作区一次性产物，未入仓库） |
+
+**验证方式约束**：全程纯 Node + 轻量 DOM stub，按 `index.html` 的 `<script src>` 顺序加载源码，
+真实调用 `E.startRun()` / `E.update()` / `E.choosePerk()`。**不起 HTTP 服务、不开 CDP 端口、
+不留后台进程、不读浏览器配置 / 历史 / 进程 / 端口**，符合用户对「不要做风险操作」的要求。
+
+### 五、如实标注（本附录不宣称的部分）
+
+- `tests/loop.js` 证明的是**状态机、几何、词条、存档、续玩与 UI 接线成立**，
+  **不是「玩法爽」「单局 4 分钟」的结论**；后者属真人手感与计时范畴，仍需 6–8 人盲玩。
+- `docs/demo-90s.md` 的 90 秒分镜按「经典射击」撰写，主模式改版后**需重剪**，本轮未改。
+- 上一轮 `docs/盲玩验收包.md` 的 S1–S4 四条标准仍适用于新主模式，但**尚未执行**，
+  工具产出不等于验收通过。
+- 队友在途的 `AI竞赛-回廊开发提示词.md` → `docs/` 文件移动，总监**未提交、未丢弃**，
+  保持原状；`Luciandeng` 与 `origin/main` 的分支差异也**未擅自合并或强推**。
+- §8 第 6–8 条（真人计时 / 90 秒视频 / Qoder Sites 大赛提交）仍为待办，
+  **GitHub 同步 ≠ 大赛提交**。

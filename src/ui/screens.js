@@ -17,6 +17,7 @@
       var el = $('screen-' + n);
       if (el) el.classList.toggle('hidden', n !== name);
     });
+    if (name === 'start') refreshLoopContinue();
     var overlay = $('overlay');
     overlay.classList.toggle('hidden', !name);
     $('stage').dataset.screen = name || 'playing';
@@ -30,6 +31,17 @@
 
   /* 当前打开的弹窗名（null = 无弹窗、正在游戏中）。供 main.js 的 Esc / 主循环判定。 */
   function current() { return currentScreen; }
+
+  /* 回廊长局续玩入口：只有存在有效存档时才出现，显示当前层 / 间。 */
+  function refreshLoopContinue() {
+    var btn = $('btn-loop-continue');
+    if (!btn) return;
+    try {
+      var label = C.core.loop && C.core.loop.saveLabel ? C.core.loop.saveLabel() : '';
+      btn.textContent = label || '';
+      btn.classList.toggle('hidden', !label);
+    } catch (e) { btn.classList.add('hidden'); }
+  }
 
   /* B6/B7：解锁页统一返回入口 —— 顶部 ×、底部「返回」、Esc 都走这里 */
   function backFromUnlock() {
@@ -221,8 +233,8 @@
 
   function perkDefinition(id) {
     var perks = C.core.perks;
-    return [perks.TABLE, perks.RECALL, perks.IMPACT].reduce(function (found, table) {
-      return found || (Object.prototype.hasOwnProperty.call(table, id) ? table[id] : null);
+    return [perks.TABLE, perks.RECALL, perks.IMPACT, perks.LOOP].reduce(function (found, table) {
+      return found || (table && Object.prototype.hasOwnProperty.call(table, id) ? table[id] : null);
     }, null);
   }
 
@@ -248,7 +260,7 @@
   }
 
   /* C8：候选数由 choices 决定，2 或 3（乃至其它数量）均动态生成，不写死 2 */
-  function showPerk(choices, nextIsBoss, prototype, impact) {
+  function showPerk(choices, nextIsBoss, prototype, impact, loop) {
     var box = $('perk-cards');
     var list = Array.isArray(choices) ? choices.filter(perkDefinition) : [];
     if (!list.length) {
@@ -280,6 +292,12 @@
       $('perk-room').textContent = '第 1 组已清';
       $('perk-title').textContent = '强化' + C.core.impact.weapons[st.impact.weapon].name;
       $('perk-sub').textContent = '获得 1 个构筑点。选一项强化，迎战下一组。';
+    } else if (loop) {
+      $('perk-title').textContent = '下一圈怎么走';
+      $('perk-room').textContent = '第 ' + (st.loop ? st.loop.layer : 1) + ' 层 · 第 ' + ((st.roomIndex || 0) + 1) + ' 间 通过';
+      $('perk-sub').textContent = nextIsBoss ?
+        '选一条路线偏好 · 接下来是这一层的巡廊首领' :
+        '选一条路线偏好 · 下一间廊道会换折角与敌人站位';
     } else {
       $('perk-title').textContent = prototype ? '选择回扫词条' : '选择词条';
       $('perk-sub').textContent = prototype ? '选一种效果带入普通房和首领战' :
@@ -337,7 +355,9 @@
     var idx = impact ? impact.wave - 1 : Math.min(s.roomIndex, total);
     var bossRoom = !impact && s.roomIndex >= total;
     $('room-name').textContent = s.room.name;
-    $('room-count').textContent = bossRoom ? '终室 · 首领' : '第 ' + (idx + 1) + ' / ' + total + (impact ? ' 组' : ' 间');
+    var layerPrefix = s.loop ? '第 ' + s.loop.layer + ' 层 · ' : '';
+    $('room-count').textContent = bossRoom ? (layerPrefix + '终室 · 首领') :
+      (layerPrefix + '第 ' + (idx + 1) + ' / ' + total + (impact ? ' 组' : ' 间'));
 
     var dots = $('room-dots');
     var dotsKey = [total, idx, !!impact, s.phase === 'won'].join(':');
@@ -399,6 +419,20 @@
       else if (impact.wave === 2) hint = C.core.perks.IMPACT[impact.perk].desc;
       else hint = impact.weapon === 'blade' ? '贴近飞行中的敌人，朝新方向再挥一刀' : '换个角度补一枪，改写飞行方向';
     }
+    else if (s.loop) {
+      var L = s.loop, rec = s.recall;
+      var streakTag = L.streak > 1 ? ' · 连扫 ×' + L.streak : '';
+      if (s.exitActive) hint = '本间已清 · 走到右侧廊口' + streakTag;
+      else if (boss && boss.patrol) {
+        if (boss.guardOpen > 0) hint = '护盾已开 · ' + boss.guardOpen.toFixed(1) + ' 秒 · 趁窗口补枪';
+        else if (boss.patrol.warning > 0) hint = '巡行预警 · 即将走' + (boss.patrol.route ? boss.patrol.route.name : '下一条廊');
+        else if (rec && rec.wave) hint = '回扫正在沿路传播' + streakTag;
+        else hint = '从另一条廊绕回，回扫打开护盾' + streakTag;
+      } else if (rec && rec.wave) hint = '回扫正在沿路传播' + streakTag;
+      else if (rec && rec.origin == null) hint = '走到任一廊口，开始下一圈' + streakTag;
+      else if (rec && rec.outbound) hint = '从另一条廊回到标记处' + streakTag;
+      else hint = (s.room.path_hint || '') + streakTag;
+    }
     else if (s.exitActive) hint = '出口已开启 → 走到右侧光环';
     else if (boss && boss.patrol) {
       if (boss.guardOpen > 0) hint = '护盾已打开 · ' + boss.guardOpen.toFixed(1) + ' 秒';
@@ -412,12 +446,14 @@
     }
     $('hint').textContent = hint;
     $('hint').classList.toggle('hint-guide', !!cue);
-    $('source').textContent = impact ? C.core.impact.weapons[impact.weapon].name : (s.prototype ? '试玩 ' + s.prototype :
-      (s.source === 'fallback' ? '离线模板 #' + ((s.templateIndex || 0) + 1) : 'AI 生成'));
+    $('source').textContent = s.loop ? '回廊长局' :
+      (impact ? C.core.impact.weapons[impact.weapon].name : (s.prototype ? '试玩 ' + s.prototype :
+      (s.source === 'fallback' ? '离线模板 #' + ((s.templateIndex || 0) + 1) : 'AI 生成')));
   }
 
   function showEnd(result) {
     var trial = result.prototype || result.impact;
+    var loop = !!result.loop;
     var state = C.core.engine.getState();
     $('end-title').textContent = result.cleared ? '通关' : '本局结束';
     $('end-title').className = result.cleared ? 'end-title win' : 'end-title lose';
@@ -426,8 +462,9 @@
       stat('战斗用时', result.seconds.toFixed(1) + ' 秒') +
       (result.impact ? stat('通过组数', String(result.waves)) : stat('通过房间', String(result.rooms))) +
       stat('击杀', String(result.kills)) +
-      (result.impact && !result.combinations ? stat('最长接力', String(result.bestChain)) :
-        (trial ? '' : stat('获得金币', '+' + result.gold)));
+      (loop ? stat('抵达层数', String(result.layers || 1)) + stat('完成闭环', String(result.loops || 0)) :
+        (result.impact && !result.combinations ? stat('最长接力', String(result.bestChain)) :
+          (trial ? '' : stat('获得金币', '+' + result.gold))));
     $('end-wallet').classList.toggle('hidden', !!trial);
     $('btn-unlock').classList.toggle('hidden', !!trial);
     $('btn-end-home').textContent = state && state.impact && state.impact.trial ? '返回单房设置' : '返回首页';
@@ -473,6 +510,10 @@
   function init(h) {
     handlers = h || {};
     $('btn-start').addEventListener('click', function () { handlers.onStart && handlers.onStart(); });
+    var loopBtn = $('btn-loop');
+    if (loopBtn) loopBtn.addEventListener('click', function () { handlers.onLoop && handlers.onLoop(); });
+    var contBtn = $('btn-loop-continue');
+    if (contBtn) contBtn.addEventListener('click', function () { handlers.onLoopContinue && handlers.onLoopContinue(); });
     $('btn-trial-setup').addEventListener('click', function () { show('trial'); });
     $('btn-trial-back').addEventListener('click', function () { show('start'); });
     $('btn-trial-start').addEventListener('click', function () {

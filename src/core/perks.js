@@ -58,6 +58,27 @@
       name: '长程蓄力', rarity: 'rare', tag: '长圈', desc: '绕经下廊组成长圈（总路程至少 1850），回扫伤害从 26 提升到 44。'
     }
   };
+  /* 回廊长局专用「路线词条」：改变的是走哪条廊更划算，而不是弹道数值。
+   * 独立于 TABLE（不进 IDS、不进局外解锁），由 engine 的 loop 分支单独发放。
+   * route:true 的三条是「选路偏好」核心，每轮候选至少出现一条。 */
+  var LOOP = {
+    p_loop_corner: { name: '折角扩散', rarity: 'rare', max: 2, tag: '折角', route: true,
+      desc: '回扫经过折角时波面变宽，上廊转角边缘的敌人也能扫到。' },
+    p_loop_long:   { name: '长程蓄力', rarity: 'rare', max: 2, tag: '长圈', route: true,
+      desc: '绕经下廊组成长圈（总路程足够长）时，回扫伤害大幅提升。' },
+    p_loop_focus:  { name: '短圈聚锋', rarity: 'rare', max: 2, tag: '短圈', route: true,
+      desc: '走上廊 + 中廊的短圈时回扫伤害提升，适合连续快速闭环。' },
+    p_loop_swift:  { name: '疾行波', rarity: 'common', max: 3, tag: '节奏',
+      desc: '回扫波推进更快，更早结束这一圈、接上下一圈。' },
+    p_loop_wide:   { name: '宽扫', rarity: 'common', max: 3, tag: '范围',
+      desc: '回扫波面加宽，能覆盖廊道更靠边的位置。' },
+    p_loop_mend:   { name: '归廊', rarity: 'rare', max: 2, tag: '续航',
+      desc: '每次完成闭环回复少量生命，鼓励持续绕行。' },
+    p_loop_dash:   { name: '回步', rarity: 'rare', max: 1, tag: '机动',
+      desc: '每次完成闭环立即刷新冲刺，方便穿过堵点换一条廊。' },
+    p_loop_greed:  { name: '拾遗', rarity: 'common', max: 2, tag: '金币',
+      desc: '被回扫击倒的敌人额外掉落金币，可在层末留作续玩本钱。' }
+  };
   var IMPACT = {
     p_impact_heavy: {
       name: '重击', rarity: 'rare', tag: '重刃', desc: '挥击静止或行走中的敌人时，击飞距离更远。'
@@ -128,6 +149,23 @@
       speed: 860, width: 30, damage: 26,
       cornerWidth: 57, cornerDistance: 96, longDistance: 1850, longDamage: 44,
       guardWindow: 3.3, bossHp: 224, bossDamage: 8, patrolSpeed: 132
+    },
+    /* 回廊长局：与旧原型同量级，但加入「连续闭环蓄势」与「短/长圈分流」。
+     * 旧 prototype 走 BALANCE.recall，本段只被 loop 分支消费，互不干扰。 */
+    loop: {
+      /* 一间房目标 2–3 圈清场（设计文档 §一「第一圈 / 下一圈」）：
+       * 波伤 34 对 36–44 血的廊内敌人基本一击，44 血需连扫 ×2 或长/短圈词条，
+       * 让「连续闭环」与「选路词条」都有可感知的收益。 */
+      speed: 860, width: 30, damage: 34,
+      cornerWidth: 57, cornerDistance: 96, cornerBonus: 16, wideBonus: 12, swiftMul: 1.35,
+      longDistance: 1850, longDamage: 54, shortDistance: 1250, shortDamage: 48,
+      /* 一圈实际约 8–10 秒，窗口必须明显长于一圈才接得上「连续闭环」；
+       * 早期设 7 秒时连扫永远停在 ×1，等于机制不存在。受伤仍立即清零。 */
+      streakStep: 0.15, streakCap: 3, streakWindow: 26,
+      bulletMul: 0.34, guardWindow: 3.3, bossHpMul: 1.0,
+      bossHp: 168, bossDamage: 8, patrolSpeed: 132,
+      mendPerLoop: 6, greedPerKill: 3,
+      layers: 3, roomsPerLayer: 3, enemyDamage: 8
     },
     impact: {
       blade: { damage: 12, cooldown: 0.32, range: 74, halfArc: 0.73, speed: 530, redirect: 480 },
@@ -321,7 +359,7 @@
   C.core = C.core || {};
   C.core.perks = {
     TABLE: TABLE, IDS: IDS, RARITY_LABEL: RARITY_LABEL, RARITY_RANK: RARITY_RANK,
-    BALANCE: BALANCE, RECALL: RECALL, IMPACT: IMPACT,
+    BALANCE: BALANCE, RECALL: RECALL, IMPACT: IMPACT, LOOP: LOOP,
     stacks: stacks, canOffer: canOffer, add: add, derive: derive, on: on,
     synergies: synergies,
     /* T28：UI 展示接口（不参与规则运算） */

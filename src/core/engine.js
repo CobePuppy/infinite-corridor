@@ -491,8 +491,127 @@
     return state;
   }
 
+  /* ---------- 回廊长局（2026-11-19 玩法本体）：三层 × 三间 + 每层巡廊首领 ----------
+   * 与 prototype 的关键差别：房间由 core/loop.js 编排，廊道折线每间不同；
+   * 敌人按廊段布阵；词条走 LOOP 池（改变选路偏好）；层末写存档供续玩。
+   * 旧 startRun / startImpact / startRecall 三条路径保持原样。 */
+  function setupLoopRoom(s) {
+    var L = s.loop, B = C.core.perks.BALANCE.loop;
+    var room = C.core.loop.roomAt(L.plan, L.layer, L.roomInLayer);
+    if (!room) { finishRun(s, true); return; }
+    L.room = room;
+    s.roomIndex = L.roomInLayer;
+    s.room = { name: room.name, shape: 'loop', color_token: 'teal', path_hint: room.hint };
+    s.roomType = 'normal';
+    s.bossPhase = 1;
+    s.walls = room.layout.walls;
+    s.recall = C.core.recall.create(room.layout);
+    var scale = 1 + 0.18 * (L.layer - 1);
+    s.enemies = room.enemies.map(function (sp) {
+      var e = makeEnemy({ hp: Math.round(sp.hp * scale), damage: B.enemyDamage,
+                          pattern: sp.pattern, type: sp.pattern }, false, 'teal', sp.pos);
+      if (e) {
+        e.lane = sp.lane;
+        if (sp.pattern === 'static') { e.turret = true; e.timer = 1.5; }
+      }
+      return e;
+    }).filter(Boolean);
+    s.bullets = []; s.enemyBullets = [];
+    s.exitActive = false;
+    s.phase = 'playing';
+    s.player.x = room.layout.hub[0].x;
+    s.player.y = room.layout.hub[0].y;
+    s.player.vx = s.player.vy = 0;
+    s.player.dashTime = 0;
+    s.trail = []; s.particles = []; s.damagePops = [];
+    s.transition = 0.45;
+    C.core.loop.save(s);
+    emit(s, 'roomEnter', { index: s.roomIndex, room: s.room, roomType: 'normal',
+                           total: B.roomsPerLayer, loop: true, layer: L.layer });
+  }
+
+  function setupLoopBoss(s) {
+    var L = s.loop, B = C.core.perks.BALANCE.loop;
+    var layout = C.core.loop.makeLayout(0, L.layer * 10 + 7);
+    s.roomIndex = B.roomsPerLayer;
+    s.room = { name: '第 ' + L.layer + ' 层 · 巡廊者', shape: 'loop', color_token: 'rust',
+               path_hint: '用回扫打开首领护盾，再趁窗口补枪' };
+    s.roomType = 'normal'; s.bossPhase = 1;
+    s.walls = layout.walls;
+    s.recall = C.core.recall.create(layout);
+    s.run.boss = { name: '巡廊者', hp: Math.round(B.bossHp * (1 + 0.2 * (L.layer - 1))),
+                   damage: B.bossDamage, pattern: 'ranged' };
+    var boss = makeEnemy({ hp: s.run.boss.hp, damage: B.bossDamage,
+                           pattern: 'ranged', type: '巡廊者' }, true, 'rust', layout.hub[1]);
+    if (boss) {
+      boss.r = 28; boss.guardOpen = 0; boss.shieldFlash = 0;
+      boss.patrol = { hub: 1, cursor: 0, phase: 1, route: null, warning: 0 };
+    }
+    s.enemies = boss ? [boss] : [];
+    s.bullets = []; s.enemyBullets = []; s.exitActive = false;
+    s.phase = 'boss';
+    s.player.x = layout.hub[0].x; s.player.y = layout.hub[0].y;
+    s.player.vx = s.player.vy = 0;
+    s.transition = 0.55;
+    A('boss');
+    emit(s, 'bossEnter', { boss: s.run.boss, phase: 1, loop: true, layer: L.layer });
+  }
+
+  function advanceLoopLayer(s) {
+    var L = s.loop;
+    L.layer += 1;
+    L.roomInLayer = 0;
+    L.streak = 0; L.streakTimer = 0; L.goldPerKill = 0;
+    s.player.invuln = Math.max(s.player.invuln, 1.0);
+    emit(s, 'loopLayer', { layer: L.layer, gold: s.gold, hp: s.player.hp });
+    setupLoopRoom(s);
+  }
+
+  function startLoop(opts) {
+    var LM = C.core.loop, B = C.core.perks.BALANCE.loop;
+    var saved = opts.continueRun ? LM.load() : null;
+    var seed = saved ? saved.seed : (opts.seed || uuid());
+    loadMeta();
+    var theme = C.theme.get(saved ? saved.theme : opts.theme);
+    var run = {
+      theme: theme.id,
+      rooms: [{ name: '回廊', color_token: 'teal', path_hint: '' },
+              { name: '回廊', color_token: 'teal', path_hint: '' },
+              { name: '回廊', color_token: 'teal', path_hint: '' }],
+      boss: { name: '巡廊者', hp: B.bossHp, damage: B.bossDamage, pattern: 'ranged' },
+      summary: '沿回廊绕行，从另一侧回击。', run_id: 'loop_' + seed
+    };
+    state = createState(run, []);
+    state.source = 'loop';
+    state.onEvent = opts.onEvent || null;
+    state.loop = {
+      plan: LM.plan(seed),
+      layer: saved ? saved.layer : 1,
+      roomInLayer: saved ? saved.roomInLayer : 0,
+      streak: 0, streakTimer: 0, goldPerKill: 0,
+      continued: !!saved
+    };
+    if (saved) {
+      state.player.maxHp = saved.maxHp || 100;
+      state.player.hp = Math.min(state.player.maxHp, Math.max(1, saved.hp || 1));
+      state.gold = saved.gold || 0;
+      state.perks = Object.assign({}, saved.perks || {});
+      state.pickCount = saved.pickCount || 0;
+      state.kills = saved.kills || 0;
+      state.elapsed = saved.elapsed || 0;
+    } else {
+      LM.clearSave();
+    }
+    setupLoopRoom(state);
+    A('start');
+    emit(state, 'runStart', { loop: true, layer: state.loop.layer,
+                              continued: !!saved, run: run, runIndex: state.loop.layer });
+    return state;
+  }
+
   async function startRun(opts) {
     opts = opts || {};
+    if (opts.loop && C.core.loop) return startLoop(opts);
     if (opts.impactWeapon != null) return startImpact(opts);
     if (opts.prototype) return startRecall(opts);
     loadMeta();
@@ -606,6 +725,8 @@
     var payload = C.core.perks.on(s, 'hurt', { damage: baseDamage, source: source, shielded: false, reflected: 0 });
     p.hp -= payload.damage;
     p.invuln = HURT_INVULN;
+    /* 长局：被打断就失去「连续闭环」蓄势，绕圈节奏本身成为一种风险收益。 */
+    if (s.loop) { s.loop.streak = 0; s.loop.streakTimer = 0; }
     s.shake = Math.max(s.shake, 11);
     s.hitstop = 0.06;
     burst(s, p.x, p.y, '#D9644B', 14, 240);
@@ -635,6 +756,23 @@
         prototype: s.prototype, cleared: cleared, seconds: s.elapsed,
         kills: s.kills, rooms: cleared ? 2 : s.roomIndex,
         summary: cleared ? '击败了巡廊者。' : '回到廊口，再试一圈。'
+      });
+      return;
+    }
+    if (s.loop) {
+      A(cleared ? 'clear' : 'death');
+      C.core.loop.clearSave();
+      var earned = Math.floor(s.gold / 2) + (cleared ? 60 : 0);
+      meta.gold += earned;
+      if (cleared) meta.clears += 1;
+      saveMeta();
+      emit(s, 'runEnd', {
+        loop: true, cleared: cleared, seconds: s.elapsed, kills: s.kills,
+        layers: s.loop.layer, gold: earned, loopGold: s.gold,
+        rooms: (s.loop.layer - 1) * B.loop.roomsPerLayer + s.loop.roomInLayer,
+        loops: s.recall ? s.recall.loops : 0,
+        summary: cleared ? '三层回廊走通了。' :
+          ('停在第 ' + s.loop.layer + ' 层 · 回廊记得你走过的路。')
       });
       return;
     }
@@ -698,6 +836,21 @@
       A('pick');
       return true;
     }
+    if (s.loop) {
+      if (!s.perkPending || s.perkPending.indexOf(id) === -1) return false;
+      var def = C.core.perks.LOOP[id];
+      if (!def || (s.perks[id] || 0) >= (def.max || 2)) return false;
+      s.perks[id] = (s.perks[id] || 0) + 1;
+      s.pickCount = (s.pickCount || 0) + 1;
+      A('pick');
+      emit(s, 'perkPicked', { id: id, def: def, loop: true });
+      s.perkPending = null;
+      s.phase = 'transition';
+      s.loop.roomInLayer += 1;
+      if (s.loop.roomInLayer >= B.loop.roomsPerLayer) setupLoopBoss(s);
+      else setupLoopRoom(s);
+      return true;
+    }
     if (!C.core.perks.add(s, id)) return false;
     s.pickCount = (s.pickCount || 0) + 1;      /* 驱动三选一节奏 */
     A('pick');
@@ -707,6 +860,21 @@
     if (s.roomIndex + 1 < s.run.rooms.length) enterRoom(s.roomIndex + 1);
     else enterBoss();
     return true;
+  }
+
+  /* 完成一次闭环：累积「连续回扫」蓄势、结算词条即时收益。
+   * 蓄势计入下一圈的规则，因此波已在 record() 内用上一圈的 rules 生成。 */
+  function onLoopClosed(s) {
+    var B = C.core.perks.BALANCE.loop, L = s.loop;
+    L.streak = Math.min(B.streakCap, (L.streak || 0) + 1);
+    L.streakTimer = B.streakWindow;
+    var rw = C.core.loop.loopRewards(s);
+    if (rw.heal) s.player.hp = Math.min(s.player.maxHp, s.player.hp + rw.heal);
+    if (rw.dash) s.player.dashCd = 0;
+    L.goldPerKill = rw.goldPerKill;
+    A('recall');
+    s.shake = Math.max(s.shake, 4);
+    emit(s, 'loopClosed', { loops: s.recall.loops, streak: L.streak, heal: rw.heal });
   }
 
   /* ---------- 每帧更新 ---------- */
@@ -752,6 +920,11 @@
     s.elapsed += dt;
     var p = s.player;
     var d = C.core.perks.derive(s);
+    var loopRules = s.loop ? C.core.loop.waveRules(s) : null;
+    if (s.loop && s.loop.streakTimer > 0) {
+      s.loop.streakTimer = Math.max(0, s.loop.streakTimer - dt);
+      if (s.loop.streakTimer === 0) s.loop.streak = 0;
+    }
     p.invuln = Math.max(0, p.invuln - dt);
     p.fireCd = Math.max(0, p.fireCd - dt);
     p.dashCd = Math.max(0, p.dashCd - dt);
@@ -812,9 +985,9 @@
         p.x += p.vx * dt / steps;
         p.y += p.vy * dt / steps;
         collideWalls(p, p.r);
-        if (s.recall && C.core.recall.record(s.recall, p, s.recallPerk)) {
-          A('recall');
-          s.shake = Math.max(s.shake, 4);
+        if (s.recall && C.core.recall.record(s.recall, p, loopRules || s.recallPerk)) {
+          if (s.loop) onLoopClosed(s);
+          else { A('recall'); s.shake = Math.max(s.shake, 4); }
         }
       }
     } else {
@@ -862,7 +1035,14 @@
         var e = s.enemies[i];
         if (!e.dead && hitList.indexOf(e) === -1 && dist(b, e) < e.r + 5) {
           var mult = (e.isBoss && s.run.boss.weakness_perk && s.perks[s.run.boss.weakness_perk]) ? 1.35 : 1;
-          if (!damageEnemy(s, e, Math.round(b.damage * mult), b.crit, 0)) return false;
+          /* 长局里射击退为牵制：只有护盾打开的首领窗口能打出全额，
+           * 逼玩家用「绕一圈」的回扫作为主要输出。 */
+          var shot = b.damage;
+          if (s.loop) {
+            var guarded = e.patrol && e.guardOpen > 0;
+            shot = b.damage * (guarded ? 1 : C.core.perks.BALANCE.loop.bulletMul);
+          }
+          if (!damageEnemy(s, e, Math.max(1, Math.round(shot * mult)), b.crit, 0)) return false;
           /* C5 连击：仅玩家子弹命中累积，刷新 1.5s 窗口 */
           s.combo = (s.combo || 0) + 1;
           s.comboTimer = B.comboWindow;
@@ -900,7 +1080,7 @@
       if (e.isBoss && inBossP2) sp *= B.bossPhase2Speed;
 
       if (e.pattern === 'chase') {
-        moveToward(e, s.recall ? C.core.recall.chaseTarget(e, p) : enemyWaypoint(s, e, p), sp, dt);
+        moveToward(e, s.recall ? C.core.recall.chaseTarget(e, p, s.recall) : enemyWaypoint(s, e, p), sp, dt);
       } else if (e.pattern === 'orbit') {
         e.angle += dt * (e.isBoss ? 1.1 : 1.6);
         var targetR = e.isBoss ? 190 : 132;
@@ -930,8 +1110,9 @@
         if (e.patrol) {
           e.guardOpen = Math.max(0, e.guardOpen - dt);
           e.shieldFlash = Math.max(0, e.shieldFlash - dt);
-          var pos = C.core.recall.advancePatrol(e, dt, B.recall.patrolSpeed * (inBossP2 ? B.bossPhase2Speed : 1),
-            inBossP2 ? 2 : 1);
+          var patrolSpeed = (s.loop ? B.loop.patrolSpeed : B.recall.patrolSpeed) * (inBossP2 ? B.bossPhase2Speed : 1);
+          var pos = C.core.recall.advancePatrol(e, dt, patrolSpeed,
+            inBossP2 ? 2 : 1, s.recall);
           e.vx = (pos.x - e.x) / dt; e.vy = (pos.y - e.y) / dt;
         }
         var canShoot = !!s.recall || clearPath(e.x, e.y, p.x, p.y, 6);
@@ -979,12 +1160,18 @@
     });
 
     if (s.recall && s.recall.wave && s.phase !== 'dead') {
+      var loopMode = !!s.loop;
+      var guardWindow = loopMode ? B.loop.guardWindow : B.recall.guardWindow;
       C.core.recall.advanceWave(s.recall, dt, p, s.enemies, function (enemy, damage) {
         if (enemy.patrol) {
-          enemy.guardOpen = B.recall.guardWindow;
+          enemy.guardOpen = guardWindow;
           A('clear');
+          emit(s, 'loopShieldOpen', { window: guardWindow });
         }
-        damageEnemy(s, enemy, damage, false, 1);
+        /* 回扫命中巡行首领是破盾 + 一次更重的输出；普通敌人为常规波伤害。 */
+        var dealt = (loopMode && enemy.isBoss) ? Math.round(damage * 1.5) : damage;
+        damageEnemy(s, enemy, dealt, false, 1);
+        if (enemy.dead && loopMode && s.loop.goldPerKill) s.gold += s.loop.goldPerKill;
       });
     }
 
@@ -1024,6 +1211,7 @@
     if (s.enemies.length === 0 && !s.exitActive) {
       s.exitActive = true;
       if (s.phase === 'boss') {
+        if (s.loop && s.loop.layer < B.loop.layers) { advanceLoopLayer(s); return s; }
         finishRun(s, true);
         return s;
       }
@@ -1033,16 +1221,20 @@
       emit(s, 'roomClear', { healed: rc.healed, hint: s.room.path_hint, index: s.roomIndex });
     }
     if (s.exitActive && s.phase !== 'perk' && s.phase !== 'dead' && s.phase !== 'won') {
-      var exit = { x: W - 74, y: s.prototype ? C.core.recall.hub[1].y : H / 2 };
+      var exit = { x: W - 74, y: s.recall ? s.recall.layout.hub[1].y : H / 2 };
       if (dist(p, exit) < EXIT_R + p.r) {
         if (s.prototype) {
           enterBoss();
           return s;
         }
         s.phase = 'perk';
-        s.perkPending = offerPerks(s);
+        s.perkPending = s.loop ? C.core.loop.offer(s) : offerPerks(s);
         A('ui');
-        emit(s, 'perkOffer', { choices: s.perkPending, nextIsBoss: s.roomIndex + 1 >= s.run.rooms.length });
+        emit(s, 'perkOffer', {
+          choices: s.perkPending, loop: !!s.loop,
+          nextIsBoss: s.loop ? (s.loop.roomInLayer + 1 >= B.loop.roomsPerLayer)
+                             : (s.roomIndex + 1 >= s.run.rooms.length)
+        });
       }
     }
 

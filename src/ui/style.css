@@ -124,6 +124,9 @@ canvas { display: block; width: 100%; height: auto; aspect-ratio: 8 / 5; outline
 .mode-entry.featured { color: var(--accent-ink); background: var(--accent); border-color: var(--accent) }
 .mode-entry.featured small { color: #34441e }
 .mode-entry.featured > span:last-child { color: currentColor }
+.mode-entry.continue { background: #16241c; border-color: #7fae6a66; color: #dff6c8 }
+.mode-entry.continue small { color: #a8c79a }
+.mode-entry.continue > span:last-child { color: #bfe89a }
 .home-experiments { display: grid; grid-template-columns: 1.55fr 1fr; gap: 8px }
 .mode-group { display: grid; gap: 7px; padding: 9px; min-width: 0; background: #11212ddd; border: 1px solid var(--line); border-radius: 5px }
 .mode-group .button-row { flex-wrap: nowrap }

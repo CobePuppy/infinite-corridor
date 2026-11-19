@@ -116,8 +116,19 @@
     switch (type) {
       case 'runStart':
         screens.show(null);
+        if (p.loop) {
+          screens.toast(p.continued ? ('续玩 · 第 ' + p.layer + ' 层') :
+            ('回廊长局 · 第 ' + p.layer + ' 层 · 从另一边回来'), 3000);
+          break;
+        }
         if (p.prototype || p.impact) break;
         screens.toast('第 ' + p.runIndex + ' 局 · ' + (p.source === 'fallback' ? '离线关卡模板' : 'AI 生成关卡'), 2200);
+        break;
+      case 'loopClosed':
+        if (p.streak > 1) screens.toast('连扫 ×' + p.streak + (p.heal ? ' · 归廊 +' + p.heal + ' 生命' : ''), 1500);
+        break;
+      case 'loopLayer':
+        screens.toast('第 ' + p.layer + ' 层 · 进度已保存，可随时退出续玩', 3200);
         break;
       case 'roomEnter': {
         /* M1 文案不变；若 logic-dev 把 roomType 挂在 roomEnter 上则追加类型标签 */
@@ -153,7 +164,7 @@
         toastBossPhase(p);
         break;
       case 'perkOffer':
-        screens.showPerk(p.choices, p.nextIsBoss, p.prototype, p.impact);
+        screens.showPerk(p.choices, p.nextIsBoss, p.prototype, p.impact, p.loop);
         break;
       case 'perkPicked':
         screens.toast('获得「' + p.def.name + '」· ' + p.def.desc, 2000);
@@ -195,6 +206,7 @@
 
   function restart() {
     var s = engine.getState();
+    if (s && s.loop) return begin({ loop: true });
     if (s && s.impact) return begin({
       impactWeapon: s.impact.weapon, impactCombinations: s.impact.combinations, impactTrial: s.impact.trial
     });
@@ -251,6 +263,8 @@
 
     screens.init({
       onStart: begin,
+      onLoop: function () { begin({ loop: true }); },
+      onLoopContinue: function () { begin({ loop: true, continueRun: true }); },
       onRecall: function (variant) { begin({ prototype: variant }); },
       onImpact: function (weapon) { begin({ impactWeapon: weapon }); },
       onImpactCombinations: function (weapon) { begin({ impactWeapon: weapon, impactCombinations: true }); },

@@ -49,11 +49,17 @@
         </header>
 
         <div class="home-modes" aria-label="战斗模式">
-          <button id="btn-trial-setup" class="mode-entry featured" type="button">
+          <button id="btn-loop" class="mode-entry featured" type="button">
+            <span><b>回廊长局</b><small>三层回廊 · 绕一圈，从另一侧回击 · 层末存档续玩</small></span><span aria-hidden="true">→</span>
+          </button>
+          <button id="btn-loop-continue" class="mode-entry continue hidden" type="button">
+            <span><b>继续回廊</b><small>从上次离开的廊口接着走</small></span><span aria-hidden="true">→</span>
+          </button>
+          <button id="btn-trial-setup" class="mode-entry" type="button">
             <span><b>单房试玩</b><small>两拨连续战斗，出发前选武器与设置</small></span><span aria-hidden="true">→</span>
           </button>
           <button id="btn-start" class="mode-entry" type="button">
-            <span><b>原版长局</b><small>探索房间、收集词条、挑战首领</small></span><span aria-hidden="true">→</span>
+            <span><b>经典射击</b><small>原版长局 · 探索房间、收集词条、挑战首领</small></span><span aria-hidden="true">→</span>
           </button>
 
           <div class="home-experiments">
@@ -159,6 +165,7 @@
 <script src="src/core/perks.js"></script>
 <script src="src/core/audio.js"></script>
 <script src="src/core/recall.js"></script>
+<script src="src/core/loop.js"></script>
 <script src="src/core/enemy-trial.js"></script>
 <script src="src/core/impact.js"></script>
 <script src="src/core/engine.js"></script>

@@ -193,7 +193,8 @@
 
   function drawExit(ctx, s, t) {
     if (s.recall && s.roomIndex === s.run.rooms.length) return;
-    var x = W - 74, y = s.recall ? C.core.recall.hub[1].y : H / 2;
+    var x = W - 74;
+    var y = s.recall ? ((s.recall.layout || C.core.recall.DEFAULT).hub[1].y) : H / 2;
     var accent = P(s.room ? s.room.color_token : 'teal');
     ctx.save();
     if (s.exitActive) {
@@ -217,6 +218,32 @@
       ctx.beginPath(); ctx.arc(x, y, C.core.engine.EXIT_R, 0, Math.PI * 2); ctx.stroke();
       ctx.setLineDash([]); ctx.globalAlpha = 1;
     }
+    ctx.restore();
+  }
+
+  /* 回廊长局：把当前房间的三条廊道画成「未走」的地面状态。
+   * 中心虚线表示可走路线，宽淡带表示廊道宽度；已走 / 回扫由 drawRecallPaths 叠加。
+   * 没有这一步，玩家看不到折角与岔路，就无从判断该走短圈还是长圈。 */
+  function drawLoopLanes(ctx, s) {
+    var rec = s.recall;
+    if (!rec || !rec.layout) return;
+    var lanes = rec.layout.lanes;
+    ctx.save();
+    ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    Object.keys(lanes).forEach(function (id) {
+      var pts = lanes[id].points;
+      function stroke(width, style, dash) {
+        ctx.beginPath();
+        ctx.moveTo(pts[0].x, pts[0].y);
+        for (var i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y);
+        ctx.lineWidth = width; ctx.strokeStyle = style;
+        if (dash && ctx.setLineDash) ctx.setLineDash(dash);
+        ctx.stroke();
+        if (dash && ctx.setLineDash) ctx.setLineDash([]);
+      }
+      stroke(20, rgba(CUR.col.teal, 0.06), null);
+      stroke(1.5, rgba(CUR.col.teal, 0.30), [4, 9]);
+    });
     ctx.restore();
   }
 
@@ -266,8 +293,9 @@
   function drawRecallHubs(ctx, s, t) {
     var r = s.recall;
     var boss = s.enemies.find(function (e) { return e.patrol; });
+    var hubs = (r.layout && r.layout.hub) || C.core.recall.hub;
     ctx.save();
-    C.core.recall.hub.forEach(function (p, i) {
+    hubs.forEach(function (p, i) {
       var marked = r.origin === i;
       var available = r.origin == null && !r.wave;
       var w = marked ? 25 + 2 * Math.sin(t * 5) : 19;
@@ -285,7 +313,7 @@
     if (boss && boss.patrol.warning > 0) {
       var patrol = boss.patrol;
       var points = patrol.route.points;
-      var a = C.core.recall.hub[patrol.hub], b = points[patrol.hub === 0 ? 1 : points.length - 2];
+      var a = hubs[patrol.hub], b = points[patrol.hub === 0 ? 1 : points.length - 2];
       var len = Math.hypot(b.x - a.x, b.y - a.y);
       ctx.translate(a.x, a.y);
       ctx.rotate(Math.atan2(b.y - a.y, b.x - a.x));
@@ -823,6 +851,7 @@
     if (s.shake > 0 && !direction) {
       ctx.translate(Math.sin(t * 135) * s.shake * 0.5, Math.cos(t * 151) * s.shake * 0.5);
     }
+    if (s.loop) drawLoopLanes(ctx, s);
     if (s.recall) drawRecallPaths(ctx, s.recall);
     if (s.impact && s.impact.trial) drawTrialWarnings(ctx, s);
     drawWalls(ctx, s);

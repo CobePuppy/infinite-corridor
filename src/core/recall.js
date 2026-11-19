@@ -1,4 +1,11 @@
-/* 固定廊道、行走记录与回扫。所有坐标均为 Canvas 世界坐标。 */
+/* 固定廊道、行走记录与回扫。所有坐标均为 Canvas 世界坐标。
+ *
+ * 2026-11-19 泛化：create(layout) 可接受 core/loop.js 产出的任意廊道布局，
+ * 所有 locate / clearLine / chaseTarget / advancePatrol 改为从实例读 layout。
+ * 不传 layout 时等价于旧的固定三廊原型 —— 旧接口（R.walls / R.hub / R.lanes /
+ * create() / record(r,p,perk) / advanceWave(...) / chaseTarget(e,p) /
+ * advancePatrol(boss,dt,speed,phase)）逐个保持，tests/recall.js 9/9 不受影响。
+ */
 (function (C) {
   'use strict';
 
@@ -37,6 +44,13 @@
     ])
   };
 
+  /* 默认布局 = 旧固定三廊。loop 模式传入自己的 layout，分区阈值保持一致。 */
+  var DEFAULT = {
+    id: 'recall', name: '三岔廊', walls: walls, hub: hub, lanes: lanes,
+    upperEdge: upperWall.y + upperWall.h, lowerEdge: lowerWall.y,
+    leftEdge: upperWall.x, rightEdge: upperWall.x + upperWall.w
+  };
+
   function nearestOnSegment(p, a, b) {
     var dx = b.x - a.x, dy = b.y - a.y;
     var lengthSquared = dx * dx + dy * dy;
@@ -48,18 +62,20 @@
     var i = 1;
     while (i < route.marks.length - 1 && d > route.marks[i]) i++;
     var a = route.points[i - 1], b = route.points[i];
-    var t = (d - route.marks[i - 1]) / (route.marks[i] - route.marks[i - 1]);
+    var span = route.marks[i] - route.marks[i - 1];
+    var t = span ? (d - route.marks[i - 1]) / span : 0;
     return point(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t);
   }
 
-  function locate(p) {
+  function locate(layout, p) {
+    layout = layout || DEFAULT;
     var id = 'middle';
-    if (p.y < upperWall.y + upperWall.h) id = 'upper';
-    else if (p.y > lowerWall.y) id = 'lower';
-    else if (p.x < upperWall.x) return { hub: 0 };
-    else if (p.x > upperWall.x + upperWall.w) return { hub: 1 };
+    if (p.y < layout.upperEdge) id = 'upper';
+    else if (p.y > layout.lowerEdge) id = 'lower';
+    else if (p.x < layout.leftEdge) return { hub: 0 };
+    else if (p.x > layout.rightEdge) return { hub: 1 };
 
-    var route = lanes[id], best = Infinity, d = 0;
+    var route = layout.lanes[id], best = Infinity, d = 0;
     for (var i = 1; i < route.points.length; i++) {
       var q = nearestOnSegment(p, route.points[i - 1], route.points[i]);
       var gap = distance(p, q);
@@ -84,8 +100,9 @@
     return from <= to ? points : points.reverse();
   }
 
-  function create() {
-    return { origin: 0, atHub: 0, current: null, outbound: null, wave: null, loops: 0 };
+  function create(layout) {
+    return { layout: layout || DEFAULT, origin: 0, atHub: 0, current: null,
+             outbound: null, wave: null, loops: 0 };
   }
 
   function trace(r) {
@@ -99,10 +116,23 @@
     return sections;
   }
 
-  function startWave(r, incoming, perk) {
+  /* 第三参兼容两种形态：旧原型传词条 id（字符串），长局传 loop.waveRules() 的规则对象。 */
+  function defaultRules(perk) {
     var B = C.core.perks.BALANCE.recall;
+    return {
+      width: B.width, cornerWidth: B.cornerWidth, cornerDistance: B.cornerDistance,
+      speed: B.speed, damage: B.damage, longDistance: B.longDistance, longDamage: B.longDamage,
+      shortDistance: 0, shortDamage: B.damage,
+      cornerPerk: perk === 'p_recall_corner', longPerk: perk === 'p_recall_distance',
+      focusPerk: false
+    };
+  }
+  function normalizeRules(v) {
+    return (v && typeof v === 'object') ? v : defaultRules(v);
+  }
+
+  function startWave(r, incoming, rules) {
     var length = incoming.length + r.outbound.length;
-    var boost = perk === 'p_recall_distance' && length >= B.longDistance;
     var parts = [], cursor = 0, lastVector;
 
     [incoming, r.outbound].forEach(function (route, i) {
@@ -110,25 +140,30 @@
       var points = pathSlice(route, endpoint(route, side), endpoint(route, 1 - side));
       for (var j = 1; j < points.length; j++) {
         var a = points[j - 1], b = points[j], size = distance(a, b);
+        if (size < 0.0001) continue;
         var vector = point((b.x - a.x) / size, (b.y - a.y) / size);
         var bend = lastVector && lastVector.x * vector.x + lastVector.y * vector.y < 0.5;
-        var extra = perk === 'p_recall_corner' && bend ? Math.min(size, B.cornerDistance) : 0;
+        var extra = rules.cornerPerk && bend ? Math.min(size, rules.cornerDistance) : 0;
         if (extra) {
           var end = point(a.x + vector.x * extra, a.y + vector.y * extra);
-          parts.push({ a: a, b: end, start: cursor, end: cursor + extra, route: route, radius: B.cornerWidth });
+          parts.push({ a: a, b: end, start: cursor, end: cursor + extra, route: route, radius: rules.cornerWidth });
           a = end;
         }
         if (size > extra) {
-          parts.push({ a: a, b: b, start: cursor + extra, end: cursor + size, route: route, radius: B.width });
+          parts.push({ a: a, b: b, start: cursor + extra, end: cursor + size, route: route, radius: rules.width });
         }
         cursor += size;
         lastVector = vector;
       }
     });
 
+    var damage = rules.damage;
+    if (rules.longPerk && length >= rules.longDistance) damage = rules.longDamage;
+    else if (rules.focusPerk && rules.shortDistance && length < rules.shortDistance) damage = rules.shortDamage;
+
     r.wave = {
       parts: parts, length: length, position: 0, hit: new Set(),
-      damage: boost ? B.longDamage : B.damage,
+      damage: damage, speed: rules.speed,
       routes: [incoming.id, r.outbound.id]
     };
     r.loops++;
@@ -137,9 +172,10 @@
     r.outbound = null;
   }
 
-  function record(r, p, perk) {
+  function record(r, p, rulesOrPerk) {
+    var rules = normalizeRules(rulesOrPerk);
     if (r.wave) return false;
-    var loc = locate(p);
+    var loc = locate(r.layout, p);
     if (loc.hub == null) {
       if (r.origin != null) r.current = loc;
       return false;
@@ -150,7 +186,7 @@
       var crossed = r.current.route;
       if (loc.hub !== r.origin) r.outbound = crossed;
       else if (r.outbound && crossed !== r.outbound) {
-        startWave(r, crossed, perk);
+        startWave(r, crossed, rules);
         return true;
       } else r.outbound = null;
       r.atHub = loc.hub;
@@ -160,7 +196,8 @@
   }
 
   function pointOnPart(part, d) {
-    var t = (d - part.start) / (part.end - part.start);
+    var span = part.end - part.start;
+    var t = span ? (d - part.start) / span : 0;
     return point(part.a.x + (part.b.x - part.a.x) * t, part.a.y + (part.b.y - part.a.y) * t);
   }
 
@@ -176,9 +213,9 @@
     return sections;
   }
 
-  function clearLine(a, b, padding) {
+  function clearLine(layout, a, b, padding) {
     // 沿两个坐标轴裁剪线段，保留落入墙矩形的参数区间。
-    return !walls.some(function (q) {
+    return !(layout.walls || walls).some(function (q) {
       var near = 0, far = 1;
       var bounds = [[a.x, b.x - a.x, q.x - padding, q.x + q.w + padding],
                     [a.y, b.y - a.y, q.y - padding, q.y + q.h + padding]];
@@ -199,16 +236,17 @@
 
   function advanceWave(r, dt, p, enemies, onHit) {
     var wave = r.wave;
-    var next = Math.min(wave.length, wave.position + C.core.perks.BALANCE.recall.speed * dt);
+    var speed = wave.speed || C.core.perks.BALANCE.recall.speed;
+    var next = Math.min(wave.length, wave.position + speed * dt);
     if (next === wave.position) return;
     var sections = waveSections(wave, wave.position, next);
     sections.forEach(function (part) {
       enemies.forEach(function (e) {
         if (e.dead || wave.hit.has(e)) return;
-        var loc = locate(e);
+        var loc = locate(r.layout, e);
         if (loc.route && loc.route !== part.route) return;
         var closest = nearestOnSegment(e, part.a, part.b);
-        if (distance(e, closest) > part.radius + e.r || !clearLine(closest, e, 0)) return;
+        if (distance(e, closest) > part.radius + e.r || !clearLine(r.layout, closest, e, 0)) return;
         wave.hit.add(e);
         onHit(e, wave.damage);
       });
@@ -220,31 +258,34 @@
     }
   }
 
-  function chaseTarget(e, p) {
-    if (clearLine(e, p, e.r)) return p;
-    var from = locate(e), to = locate(p);
+  /* 第三参可选：传 loop 状态则按该房间的廊道寻路；不传则走默认三廊（旧行为）。 */
+  function chaseTarget(e, p, r) {
+    var layout = (r && r.layout) || DEFAULT;
+    function clear(a, b, padding) { return clearLine(layout, a, b, padding); }
+    if (clear(e, p, e.r)) return p;
+    var from = locate(layout, e), to = locate(layout, p);
     var shortest = Infinity, waypoints = [];
     if (from.route && from.route === to.route) {
       shortest = Math.abs(from.d - to.d);
       waypoints = pathSlice(from.route, from.d, to.d);
     }
-    for (var a = 0; a < hub.length; a++) {
+    for (var a = 0; a < layout.hub.length; a++) {
       if (from.hub != null && from.hub !== a) continue;
-      var approach = from.route ? Math.abs(from.d - endpoint(from.route, a)) : distance(e, hub[a]);
-      for (var b = 0; b < hub.length; b++) {
+      var approach = from.route ? Math.abs(from.d - endpoint(from.route, a)) : distance(e, layout.hub[a]);
+      for (var b = 0; b < layout.hub.length; b++) {
         if (to.hub != null && to.hub !== b) continue;
-        var depart = to.route ? Math.abs(to.d - endpoint(to.route, b)) : distance(hub[b], p);
-        var cost = approach + depart + (a === b ? 0 : lanes.middle.length);
+        var depart = to.route ? Math.abs(to.d - endpoint(to.route, b)) : distance(layout.hub[b], p);
+        var cost = approach + depart + (a === b ? 0 : layout.lanes.middle.length);
         if (cost >= shortest) continue;
         shortest = cost;
-        waypoints = from.route ? pathSlice(from.route, from.d, endpoint(from.route, a)) : [hub[a]];
-        if (a !== b) waypoints.push(hub[b]);
+        waypoints = from.route ? pathSlice(from.route, from.d, endpoint(from.route, a)) : [layout.hub[a]];
+        if (a !== b) waypoints.push(layout.hub[b]);
         if (to.route) waypoints = waypoints.concat(pathSlice(to.route, endpoint(to.route, b), to.d));
       }
     }
     waypoints.push(p);
     var target = waypoints[0];
-    for (var j = 1; j < waypoints.length && clearLine(e, waypoints[j], e.r); j++) {
+    for (var j = 1; j < waypoints.length && clear(e, waypoints[j], e.r); j++) {
       target = waypoints[j];
     }
     return target;
@@ -255,7 +296,8 @@
     ['middle', 'lower', 'middle', 'upper']
   ];
 
-  function advancePatrol(boss, dt, speed, phase) {
+  function advancePatrol(boss, dt, speed, phase, r) {
+    var layout = (r && r.layout) || DEFAULT;
     var patrol = boss.patrol;
     if (!patrol.route) {
       if (patrol.phase !== phase) {
@@ -263,7 +305,7 @@
         patrol.phase = phase;
       }
       var order = patrols[phase - 1];
-      patrol.route = lanes[order[patrol.cursor++ % order.length]];
+      patrol.route = layout.lanes[order[patrol.cursor++ % order.length]];
       patrol.d = endpoint(patrol.route, patrol.hub);
       patrol.warning = phase === 2 ? 1 : 0.65;
     }
@@ -283,7 +325,9 @@
   }
 
   C.core.recall = {
-    walls: walls, hub: hub, lanes: lanes, create: create, trace: trace, record: record,
-    waveSections: waveSections, advanceWave: advanceWave, chaseTarget: chaseTarget, advancePatrol: advancePatrol
+    walls: walls, hub: hub, lanes: lanes, DEFAULT: DEFAULT,
+    create: create, trace: trace, record: record,
+    waveSections: waveSections, advanceWave: advanceWave,
+    chaseTarget: chaseTarget, advancePatrol: advancePatrol
   };
 })(window.Corridor = window.Corridor || {});
