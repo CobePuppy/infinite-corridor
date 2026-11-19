@@ -326,7 +326,7 @@ button:not(:disabled):hover, select:hover { border-color: var(--guide) }
 .end-gold b, .wallet b { color: var(--gold); font-size: 16px }
 .end-actions { margin-top: 21px }
 .unlock-panel { width: min(940px, 100%); display: grid; grid-template-rows: auto minmax(0, 1fr) auto; gap: 15px }
-.unlock-panel > .btn { justify-self: start }
+.unlock-actions { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px }
 .unlock-head { display: flex; justify-content: space-between; align-items: start; gap: 8px }
 .unlock-head-right { display: flex; align-items: center; gap: 8px }
 .wallet { white-space: nowrap }

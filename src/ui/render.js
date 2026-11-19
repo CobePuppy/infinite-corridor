@@ -651,18 +651,144 @@
     ctx.restore();
   }
 
-  function drawImpactActions(ctx, g) {
+  function drawSwing(ctx, sw) {
+    if (!sw || sw.life <= 0) return;
+    var w = C.core.perks.BALANCE.impact.blade;
+    var halfArc = sw.halfArc || w.halfArc;
     ctx.save();
-    if (g.swing && g.swing.life > 0) {
-      var sw = g.swing;
-      var w = C.core.perks.BALANCE.impact.blade;
-      ctx.globalAlpha = sw.life / sw.max;
-      ctx.fillStyle = rgba(CUR.col.player, 0.16);
-      ctx.strokeStyle = CUR.col.player; ctx.lineWidth = 2;
-      ctx.beginPath(); ctx.moveTo(sw.x, sw.y);
-      ctx.arc(sw.x, sw.y, w.range, sw.angle - w.halfArc, sw.angle + w.halfArc);
-      ctx.closePath(); ctx.fill(); ctx.stroke();
+    ctx.globalAlpha = sw.life / sw.max;
+    ctx.fillStyle = rgba(CUR.col.player, 0.16);
+    ctx.strokeStyle = CUR.col.player; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(sw.x, sw.y);
+    ctx.arc(sw.x, sw.y, sw.range || w.range, sw.angle - halfArc, sw.angle + halfArc);
+    ctx.closePath(); ctx.fill(); ctx.stroke();
+    ctx.restore();
+  }
+
+  function drawFreeSlash(ctx, sw) {
+    if (!sw || sw.progress <= 0) return;
+    var col = CUR.col, radius = sw.range;
+    var after = clamp((sw.age - sw.windup - sw.sweep) / sw.recovery, 0, 1);
+    var tail = Math.max(0, sw.progress - 0.58 + 0.44 * after);
+    var from = sw.angle + sw.direction * sw.halfArc * (2 * tail - 1);
+    var to = sw.angle + sw.direction * sw.halfArc * (2 * sw.progress - 1);
+    var reverse = sw.direction < 0;
+    var x = sw.x, y = sw.y;
+    ctx.save();
+    ctx.globalAlpha = 1 - after;
+    var glow = ctx.createRadialGradient(x, y, radius * 0.54, x, y, radius);
+    glow.addColorStop(0, rgba(col.teal, 0));
+    glow.addColorStop(0.66, rgba(col.player, 0.26));
+    glow.addColorStop(1, rgba(col.player, 0.82));
+    ctx.fillStyle = glow;
+    ctx.beginPath();
+    ctx.arc(x, y, radius, from, to, reverse);
+    ctx.arc(x, y, radius * 0.69, to, from, !reverse);
+    ctx.closePath(); ctx.fill();
+
+    ctx.lineCap = 'round';
+    ctx.strokeStyle = rgba(col.player, 0.68); ctx.lineWidth = 6;
+    ctx.beginPath(); ctx.arc(x, y, radius, from, to, reverse); ctx.stroke();
+    ctx.strokeStyle = col.flash; ctx.lineWidth = 2.4;
+    ctx.beginPath(); ctx.arc(x, y, radius, from + (to - from) * 0.36, to, reverse); ctx.stroke();
+    ctx.strokeStyle = rgba(col.teal, 0.72); ctx.lineWidth = 1.3;
+    ctx.beginPath(); ctx.arc(x, y, radius * 0.82, from, from + (to - from) * 0.78, reverse); ctx.stroke();
+    ctx.restore();
+  }
+
+  function drawFreeBladeContacts(ctx, contacts) {
+    var col = CUR.col;
+    contacts.forEach(function (contact) {
+      var life = contact.life / contact.max, age = 1 - life;
+      var heavy = contact.kind === 'heavy', guard = contact.kind === 'guard';
+      var color = guard ? col.fold : col.player;
+      var size = heavy ? 38 : 27;
+      ctx.save(); ctx.translate(contact.x, contact.y); ctx.rotate(contact.angle);
+      ctx.strokeStyle = color; ctx.lineWidth = heavy ? 3 : 2;
+      ctx.globalAlpha = life * 0.72;
+      var ring = 8 + age * size;
+      ctx.beginPath(); ctx.ellipse(0, 0, ring * 0.62, ring, 0, 0, Math.PI * 2); ctx.stroke();
+      ctx.globalAlpha = life; ctx.lineCap = 'round';
+      for (var i = 0; i < 7; i++) {
+        var a = (i - 3) * 0.43 + contact.direction * 0.23;
+        var reach = size * (0.75 + i % 3 * 0.16) * (0.53 + age);
+        var root = age * reach * 0.75 + 3;
+        ctx.strokeStyle = i % 2 ? col.flash : color;
+        ctx.beginPath(); ctx.moveTo(Math.cos(a) * root, Math.sin(a) * root);
+        ctx.lineTo(Math.cos(a) * reach, Math.sin(a) * reach); ctx.stroke();
+      }
+      ctx.fillStyle = col.flash; ctx.globalAlpha = life * life;
+      var core = (heavy ? 15 : 11) * life;
+      path(ctx, [[-core, 0], [-2, -2], [0, -core * 0.75], [2, -2], [core * 1.5, 0],
+        [2, 2], [0, core * 0.75], [-2, 2]]); ctx.fill();
+      ctx.restore();
+    });
+  }
+
+  function cannonRecoil(shot, tuning) {
+    if (!shot) return 0;
+    var rest = clamp(1 - shot.age / tuning.recoilTime, 0, 1);
+    return tuning.recoilDistance * rest * rest;
+  }
+
+  function drawFreeCannonFx(ctx, s) {
+    var f = s.free, col = CUR.col, tuning = C.core.perks.BALANCE.free.cannonAction;
+    var shot = f.cannonShot;
+    if (shot) {
+      var muzzle = tuning.muzzleReach - tuning.recoilDistance;
+      var smoke = shot.age / tuning.smokeTime;
+      ctx.save(); ctx.translate(shot.x, shot.y); ctx.rotate(shot.angle);
+      for (var i = 0; i < 3; i++) {
+        ctx.fillStyle = rgba(col.guide, 0.19 * (1 - smoke) * smoke);
+        ctx.beginPath();
+        ctx.ellipse(muzzle + 12 + smoke * 24 + i * 8, (i - 1) * (4 + smoke * 3),
+          7 + smoke * 11, 3 + smoke * 9, (i - 1) * 0.24, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.restore();
+      if (shot.age < tuning.muzzleTime) {
+        var holder = f.weapon === 'cannon' ? s.player : shot;
+        var flash = 1 - shot.age / tuning.muzzleTime;
+        ctx.save(); ctx.translate(holder.x, holder.y); ctx.rotate(shot.angle);
+        ctx.translate(tuning.muzzleReach - cannonRecoil(shot, tuning), 0);
+        var glow = ctx.createRadialGradient(0, 0, 1, 0, 0, 33);
+        glow.addColorStop(0, rgba(col.amber, 0.60 * flash));
+        glow.addColorStop(1, rgba(col.amber, 0));
+        ctx.fillStyle = glow;
+        ctx.beginPath(); ctx.arc(0, 0, 33, 0, Math.PI * 2); ctx.fill();
+        ctx.globalAlpha = flash;
+        ctx.fillStyle = col.amber;
+        path(ctx, [[-4, 0], [5, -5], [12, -5], [24, -10], [19, -3], [35, 0], [18, 4],
+          [23, 9], [9, 6], [2, 4]]); ctx.fill();
+        ctx.fillStyle = col.flash;
+        path(ctx, [[-3, 0], [6, -3], [26, 0], [6, 3]]); ctx.fill();
+        ctx.restore();
+      }
     }
+    f.cannonContacts.forEach(function (contact) {
+      var life = contact.life / tuning.contactLife, age = 1 - life;
+      var color = contact.guard ? col.fold : (contact.heavy ? col.amber : col.guide);
+      var size = contact.heavy ? 36 : 28;
+      ctx.save(); ctx.translate(contact.x, contact.y); ctx.rotate(contact.angle);
+      ctx.globalAlpha = life; ctx.strokeStyle = color; ctx.lineWidth = 1.7;
+      ctx.beginPath(); ctx.moveTo(-2, -7 - age * 12); ctx.lineTo(-2, 7 + age * 12); ctx.stroke();
+      for (var i = 0; i < 6; i++) {
+        var ray = (i - 2.5) * 0.29, speed = size * (0.7 + i % 3 * 0.18);
+        var tail = speed * age * 0.78, head = tail + speed * (0.28 + life * 0.16);
+        ctx.strokeStyle = i % 3 ? color : col.flash;
+        ctx.beginPath(); ctx.moveTo(Math.cos(ray) * tail, Math.sin(ray) * tail);
+        ctx.lineTo(Math.cos(ray) * head, Math.sin(ray) * head); ctx.stroke();
+      }
+      ctx.fillStyle = col.flash;
+      var core = 3 + (contact.heavy ? 4 : 2) * life;
+      path(ctx, [[-core, 0], [0, -core], [core * 1.6, 0], [0, core]]); ctx.fill();
+      ctx.restore();
+    });
+  }
+
+  function drawImpactActions(ctx, g) {
+    drawSwing(ctx, g.swing);
+    ctx.save();
     if (g.shot && g.shot.life > 0) {
       var points = g.shot.points;
       ctx.globalAlpha = g.shot.life / g.shot.max;
@@ -739,18 +865,19 @@
   function drawBullets(ctx, s) {
     var col = CUR.col, es = CUR.vis.enemyStyle, glow = CUR.vis.glow || 1;
     s.bullets.forEach(function (b) {
-      var tx = b.x - b.vx * 0.026, ty = b.y - b.vy * 0.026;
+      var scale = b.secondary ? 0.72 : 1;
+      var tx = b.x - b.vx * 0.026 * scale, ty = b.y - b.vy * 0.026 * scale;
       var c = b.crit ? col.crit : col.bullet;
       var lg = ctx.createLinearGradient(tx, ty, b.x, b.y);
       lg.addColorStop(0, rgba(c, 0)); lg.addColorStop(1, rgba(c, 0.88));
-      ctx.strokeStyle = lg; ctx.lineWidth = b.crit ? 4.5 : 3; ctx.lineCap = 'round';
+      ctx.strokeStyle = lg; ctx.lineWidth = (b.crit ? 4.5 : 3) * scale; ctx.lineCap = 'round';
       ctx.beginPath(); ctx.moveTo(tx, ty); ctx.lineTo(b.x, b.y); ctx.stroke();
       ctx.fillStyle = rgba(c, 0.16 * glow);
-      ctx.beginPath(); ctx.arc(b.x, b.y, b.crit ? 8 : 6, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.arc(b.x, b.y, (b.crit ? 8 : 6) * scale, 0, Math.PI * 2); ctx.fill();
       ctx.fillStyle = c; ctx.beginPath();
       if (es === 'academic') ctx.rect(b.x - 3, b.y - 3, 6, 6);
       else if (es === 'taiji') ctx.ellipse(b.x, b.y, b.crit ? 6 : 4.5, b.crit ? 3.6 : 2.8, Math.atan2(b.vy, b.vx), 0, Math.PI * 2);
-      else ctx.arc(b.x, b.y, b.crit ? 4 : 2.8, 0, Math.PI * 2);
+      else ctx.arc(b.x, b.y, (b.crit ? 4 : 2.8) * scale, 0, Math.PI * 2);
       ctx.fill();
       if (b.homing) {
         /* M11 导引弹：投射物实体用一圈细环 + 前向短矢与直线弹区分。 */
@@ -844,7 +971,21 @@
     ctx.beginPath(); ctx.ellipse(1.5, e.r * 0.78, e.r * 1.08, e.r * 0.52, 0, 0, Math.PI * 2); ctx.fill();
     ctx.strokeStyle = rgba(color, 0.18); ctx.lineWidth = 1;
     ctx.beginPath(); ctx.arc(0, 0, e.r + 7, 0, Math.PI * 2); ctx.stroke();
-    ctx.save(); enemyGlyph(ctx, e, color); ctx.restore();
+    if (e.cannonSlow) {
+      ctx.strokeStyle = rgba(col.guide, 0.78); ctx.lineWidth = 1.7;
+      ctx.beginPath(); ctx.arc(0, 0, e.r + 7, Math.PI * 0.27, Math.PI * 0.73); ctx.stroke();
+    }
+    ctx.save();
+    var recoil = e.bladeRecoil;
+    if (recoil) {
+      var rest = recoil.life / C.core.perks.BALANCE.free.bladeAction.recoilTime;
+      var weight = rest * rest;
+      var distance = recoil.distance * weight;
+      ctx.translate(Math.cos(recoil.angle) * distance, Math.sin(recoil.angle) * distance);
+      ctx.rotate(recoil.direction * 0.30 * weight);
+    }
+    enemyGlyph(ctx, e, color);
+    ctx.restore();
     /* M9：长局首领有独立护盾绘制（drawBossShield），这里只保留旧原型的一圈虚线 */
     if (e.patrol && !e.shield) {
       ctx.lineWidth = 2;
@@ -876,7 +1017,7 @@
   }
 
   /* ---------- 玩家：唯一高亮色，外环旋转、冲刺拖影、指向三角 ---------- */
-  function playerGlyph(ctx, r, weapon) {
+  function playerGlyph(ctx, r, weapon, separateWeapon) {
     var col = CUR.col;
     ctx.strokeStyle = rgba(col.player, 0.35); ctx.lineWidth = 1;
     ctx.beginPath(); ctx.arc(0, 0, r + 7, 0, Math.PI * 2); ctx.stroke();
@@ -888,14 +1029,71 @@
     path(ctx, [[-3, -6], [6, 0], [-3, 6], [0, 0]]); ctx.fill();
     ctx.fillStyle = col.player;
     ctx.beginPath(); ctx.arc(0, 0, 2.2, 0, Math.PI * 2); ctx.fill();
+    if (separateWeapon) return;
     ctx.fillStyle = col.player; ctx.strokeStyle = col.outline; ctx.lineWidth = 1.4;
     if (weapon === 'blade') path(ctx, [[r + 2, 6], [r + 13, -13], [r + 14, -3], [r + 7, 7]]);
     else rr(ctx, r - 2, -4, r + 11, 8, 2);
     ctx.fill(); ctx.stroke();
   }
 
+  function drawFreeBladeWeapon(ctx, p, sw, nextDirection) {
+    var col = CUR.col;
+    var idleAngle = p.angle - nextDirection * 0.59;
+    var heading = idleAngle, extension = 0.72;
+    if (sw) {
+      var ready = clamp(sw.age / sw.windup, 0, 1);
+      var settle = clamp((sw.age - sw.windup - sw.sweep) / sw.recovery, 0, 1);
+      if (sw.progress === 0) {
+        var pullback = 1 - (1 - ready) * (1 - ready);
+        heading = sw.angle - sw.direction * (0.59 + (sw.halfArc + 0.55 - 0.59) * pullback);
+        extension = 0.72 - 0.18 * Math.sin(ready * Math.PI / 2);
+      } else {
+        var release = clamp(sw.progress * 5, 0, 1);
+        heading = sw.angle + sw.direction * (sw.halfArc * (sw.progress * 2 - 1) - 0.55 * (1 - release));
+        var restDelta = idleAngle - heading;
+        heading += Math.atan2(Math.sin(restDelta), Math.cos(restDelta)) * settle;
+        extension = 0.54 + 0.34 * release + 0.16 * Math.sin(sw.progress * Math.PI) - 0.16 * settle;
+      }
+    }
+    var grip = p.r + 4, blade = 43 * extension;
+    ctx.save(); ctx.rotate(heading);
+    ctx.strokeStyle = col.outline; ctx.lineWidth = 5; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(p.r * 0.42, 0); ctx.lineTo(grip + 4, 0); ctx.stroke();
+
+    ctx.translate(grip, 0);
+    ctx.fillStyle = col.player; ctx.strokeStyle = col.outline; ctx.lineWidth = 1.8;
+    path(ctx, [[2, -5], [blade - 8, -6], [blade, -1], [blade - 8, 5], [2, 5]]);
+    ctx.fill(); ctx.stroke();
+    ctx.fillStyle = shade(col.player, -0.36);
+    path(ctx, [[3, 1], [blade - 2, -1], [blade - 8, 4], [3, 4]]); ctx.fill();
+    ctx.strokeStyle = col.flash; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.moveTo(5, -4); ctx.lineTo(blade - 8, -5); ctx.lineTo(blade - 1, -1); ctx.stroke();
+    ctx.fillStyle = col.playerInk; ctx.strokeStyle = col.player;
+    rr(ctx, -3, -9, 6, 18, 2); ctx.fill(); ctx.stroke();
+    ctx.restore();
+  }
+
+  function drawFreeCannon(ctx, p, shot) {
+    var col = CUR.col, tuning = C.core.perks.BALANCE.free.cannonAction;
+    var tip = tuning.muzzleReach, recoil = cannonRecoil(shot, tuning);
+    ctx.save(); ctx.rotate(shot && shot.age < tuning.muzzleTime ? shot.angle : p.angle);
+    ctx.translate(-recoil, 0);
+    ctx.strokeStyle = col.outline; ctx.fillStyle = shade(col.guide, -0.43); ctx.lineWidth = 2;
+    path(ctx, [[7, -5], [15, -8], [tip - 7, -7], [tip, -4], [tip, 4], [tip - 7, 6], [13, 6], [7, 3]]);
+    ctx.fill(); ctx.stroke();
+    ctx.fillStyle = col.playerInk;
+    rr(ctx, 11, -4, 9, 8, 2); ctx.fill();
+    ctx.strokeStyle = col.guide; ctx.lineWidth = 1.6;
+    ctx.beginPath(); ctx.moveTo(14, -6); ctx.lineTo(tip - 6, -5); ctx.stroke();
+    ctx.strokeStyle = col.amber;
+    ctx.beginPath(); ctx.moveTo(tip - 3, -4); ctx.lineTo(tip - 3, 4); ctx.stroke();
+    ctx.restore();
+  }
+
   function drawPlayer(ctx, s, t) {
     var p = s.player, col = CUR.col, glow = CUR.vis.glow || 1;
+    var sw = s.free && s.free.swing;
+    var freeBlade = s.free && (sw || s.free.weapon === 'blade');
     ctx.save(); ctx.translate(p.x, p.y);
     if (p.invuln > 0 && Math.floor(t * 18) % 2 === 0 && p.dashTime <= 0) ctx.globalAlpha = 0.45;
     var rg = ctx.createRadialGradient(0, 0, 0, 0, 0, p.r + 18);
@@ -913,8 +1111,11 @@
       ctx.strokeStyle = rgba(col.player, 0.35); ctx.lineWidth = 2;
       ctx.beginPath(); ctx.moveTo(-22, 0); ctx.lineTo(-6, 0); ctx.stroke();
     }
-    ctx.rotate(p.angle || 0);
-    playerGlyph(ctx, p.r, s.impact && s.impact.weapon);
+    ctx.save(); ctx.rotate(sw ? sw.angle : (p.angle || 0));
+    playerGlyph(ctx, p.r, s.impact && s.impact.weapon, !!s.free);
+    ctx.restore();
+    if (freeBlade) drawFreeBladeWeapon(ctx, p, sw, s.free.bladeDirection);
+    else if (s.free) drawFreeCannon(ctx, p, s.free.cannonShot);
     ctx.restore();
   }
 
@@ -1563,9 +1764,7 @@
     ctx.save();
     drawBackground(ctx, t);
     if (s.free) drawFreeTiles(ctx, s, t);
-    if (s.shake > 0 && !direction) {
-      ctx.translate(Math.sin(t * 135) * s.shake * 0.5, Math.cos(t * 151) * s.shake * 0.5);
-    }
+    if (s.shake > 0 && !direction) ctx.translate(Math.sin(t * 135) * s.shake * 0.5, Math.cos(t * 151) * s.shake * 0.5);
     if (s.loop) drawLoopLanes(ctx, s, t);
     if (s.recall) drawRecallPaths(ctx, s, t);
     if (s.impact && s.impact.trial) drawTrialWarnings(ctx, s);
@@ -1581,8 +1780,19 @@
     if (s.loop || s.free) drawBossShield(ctx, s, t);
     drawBullets(ctx, s);
     if (s.impact) drawImpactActions(ctx, s.impact);
+    if (s.free) {
+      drawFreeSlash(ctx, s.free.swing);
+      ctx.fillStyle = CUR.col.player;
+      s.satellites.forEach(function (sat) {
+        ctx.beginPath(); ctx.arc(sat.x, sat.y, 4, 0, Math.PI * 2); ctx.fill();
+      });
+    }
     drawPlayer(ctx, s, t);
-    if (s.free) drawFreeDodge(ctx, s, t);
+    if (s.free) {
+      drawFreeBladeContacts(ctx, s.free.bladeContacts);
+      drawFreeCannonFx(ctx, s);
+      drawFreeDodge(ctx, s, t);
+    }
     drawCombatGuide(ctx, s, cue === undefined ? C.ui.combatGuide.get(s) : cue);
     ctx.restore();
 

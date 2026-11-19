@@ -13,7 +13,7 @@
 
   function show(name) {
     var previous = currentScreen;
-    ['start', 'trial', 'loading', 'perk', 'end', 'unlock', 'pause'].forEach(function (n) {
+    ['start', 'free-setup', 'trial', 'loading', 'perk', 'end', 'unlock', 'pause'].forEach(function (n) {
       var el = $('screen-' + n);
       if (el) el.classList.toggle('hidden', n !== name);
     });
@@ -237,7 +237,7 @@
 
   function perkDefinition(id) {
     var perks = C.core.perks;
-    return [perks.TABLE, perks.RECALL, perks.IMPACT, perks.LOOP].reduce(function (found, table) {
+    return [perks.TABLE, perks.RECALL, perks.IMPACT, perks.LOOP, perks.FREE_WEAPON].reduce(function (found, table) {
       return found || (table && Object.prototype.hasOwnProperty.call(table, id) ? table[id] : null);
     }, null);
   }
@@ -296,6 +296,11 @@
       $('perk-room').textContent = '第 1 组已清';
       $('perk-title').textContent = '强化' + C.core.impact.weapons[st.impact.weapon].name;
       $('perk-sub').textContent = '获得 1 个构筑点。选一项强化，迎战下一组。';
+    } else if (loop && st.free) {
+      var style = C.core.freewave.getStyle(st.free.style);
+      $('perk-title').textContent = '选择' + style.label + '强化';
+      $('perk-room').textContent = '第 ' + st.free.layer + ' 层 · 第 ' + (st.free.roomInLayer + 1) + ' 间通过';
+      $('perk-sub').textContent = nextIsBoss ? '选择一项强化，迎战巡廊者。' : '选择一项强化，带进下一间。';
     } else if (loop) {
       $('perk-title').textContent = '下一圈怎么走';
       $('perk-room').textContent = '第 ' + (st.loop ? st.loop.layer : 1) + ' 层 · 第 ' + ((st.roomIndex || 0) + 1) + ' 间 通过';
@@ -343,6 +348,14 @@
     if (impact || s.prototype) $('hud').dataset.prototype = impact ? 'impact' : s.prototype;
     else delete $('hud').dataset.prototype;
     $('run-gold').classList.toggle('hidden', !!(impact || s.prototype));
+    var weaponButton = $('btn-switch-weapon');
+    weaponButton.classList.toggle('hidden', !s.free);
+    if (s.free && weaponButton.dataset.weapon !== s.free.weapon) {
+      var isBlade = s.free.weapon === 'blade';
+      weaponButton.dataset.weapon = s.free.weapon;
+      $('hud-weapon').textContent = isBlade ? '大剑' : '手炮';
+      weaponButton.setAttribute('aria-label', isBlade ? '当前大剑，切换手炮' : '当前手炮，切换大剑');
+    }
     var p = s.player;
     var ratio = Math.max(0, p.hp / p.maxHp);
     $('hp-fill').style.width = (ratio * 100) + '%';
@@ -527,7 +540,7 @@
     }
     $('hint').textContent = hint;
     $('hint').classList.toggle('hint-guide', !!cue);
-    $('source').textContent = s.free ? '自由回廊' : (s.loop ? '回廊长局' :
+    $('source').textContent = s.free ? C.core.freewave.getStyle(s.free.style).label + '流派' : (s.loop ? '回廊长局' :
       (impact ? C.core.impact.weapons[impact.weapon].name : (s.prototype ? '试玩 ' + s.prototype :
       (s.source === 'fallback' ? '离线模板 #' + ((s.templateIndex || 0) + 1) : 'AI 生成'))));
   }
@@ -549,7 +562,7 @@
           (trial ? '' : stat('获得金币', '+' + result.gold))));
     $('end-wallet').classList.toggle('hidden', !!trial);
     $('btn-unlock').classList.toggle('hidden', !!trial);
-    $('btn-end-home').textContent = state && state.impact && state.impact.trial ? '返回单房设置' : '返回首页';
+    $('btn-end-home').textContent = state && state.impact && state.impact.trial ? '更换武器 / 设置' : '返回首页';
     if (!trial) $('end-gold').textContent = C.core.engine.getMeta().gold;
     show('end');
   }
@@ -559,8 +572,13 @@
   }
 
   function showUnlock(fromEnd) {
-    var meta = C.core.engine.getMeta();
+    var engine = C.core.engine, meta = engine.loadMeta();
     $('unlock-gold').textContent = meta.gold;
+    if (fromEnd) $('end-gold').textContent = meta.gold;
+    var reset = $('unlock-reset');
+    reset.disabled = !meta.unlocked.length;
+    reset.textContent = '重置并返还金币';
+    delete reset.dataset.confirm;
     var box = $('unlock-grid');
     var scroll = currentScreen === 'unlock' ? box.scrollTop : 0;
     box.innerHTML = '';
@@ -569,11 +587,11 @@
       var card = perkCard(id, {
         locked: owned,
         noPick: true,
-        footer: '<div class="perk-price">' + (owned ? '已解锁 · 开局自带' : '60 金币解锁') + '</div>'
+        footer: '<div class="perk-price">' + (owned ? '已解锁 · 开局自带' : engine.UNLOCK_COST + ' 金币解锁') + '</div>'
       });
       if (!owned) {
         card.addEventListener('click', function () { handlers.onUnlock && handlers.onUnlock(id); });
-        card.classList.toggle('poor', meta.gold < 60);
+        card.classList.toggle('poor', meta.gold < engine.UNLOCK_COST);
       }
       box.appendChild(card);
     });
@@ -593,7 +611,13 @@
     handlers = h || {};
     $('btn-start').addEventListener('click', function () { handlers.onStart && handlers.onStart(); });
     var loopBtn = $('btn-loop');
-    if (loopBtn) loopBtn.addEventListener('click', function () { handlers.onFree && handlers.onFree(); });
+    if (loopBtn) loopBtn.addEventListener('click', function () { show('free-setup'); });
+    if (C.core.freewave) {
+      Object.keys(C.core.freewave.STYLES).forEach(function (id) {
+        $('btn-free-' + id).addEventListener('click', function () { if (handlers.onFree) handlers.onFree(id); });
+      });
+    }
+    $('btn-free-back').addEventListener('click', function () { show('start'); });
     var contBtn = $('btn-loop-continue');
     if (contBtn) contBtn.addEventListener('click', function () { handlers.onFreeContinue && handlers.onFreeContinue(); });
     var classicBtn = $('btn-loop-classic');
@@ -614,6 +638,17 @@
     $('btn-unlock-start').addEventListener('click', function () { showUnlock(false); });
     $('unlock-back').addEventListener('click', backFromUnlock);
     $('unlock-close').addEventListener('click', backFromUnlock);
+    var reset = $('unlock-reset');
+    reset.addEventListener('click', function () {
+      if (reset.disabled) return;
+      if (reset.dataset.confirm) {
+        if (handlers.onResetUnlocks) handlers.onResetUnlocks($('unlock-back').dataset.from === 'end');
+      } else {
+        reset.dataset.confirm = 'true';
+        reset.textContent = '确认重置所有局外技能';
+      }
+    });
+    $('btn-switch-weapon').addEventListener('click', function () { if (handlers.onSwitchWeapon) handlers.onSwitchWeapon(); });
     $('btn-mute').addEventListener('click', function () { handlers.onToggleMute && handlers.onToggleMute(); });
     $('btn-pause').addEventListener('click', function () { handlers.onPause && handlers.onPause(); });
     /* B9：暂停面板三个出口，全部交给 main.js 编排 */

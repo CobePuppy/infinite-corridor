@@ -302,28 +302,29 @@
     return false;
   }
 
-  /* ---------- 词条：复用独立 LOOP 池，不进冻结 TABLE / IDS ---------- */
+  /* 卡池取决于开局流派，和玩家当前拿着哪把武器无关。 */
+  var STYLES = {
+    sweep: { id: 'sweep', label: '回扫', pool: ['p_loop_mend', 'p_loop_cd', 'p_loop_breach', 'p_loop_dash',
+      'p_loop_window', 'p_loop_shard', 'p_loop_overdrive'] },
+    blade: { id: 'blade', label: '大剑', pool: ['p_free_blade_reach', 'p_free_blade_damage', 'p_free_blade_speed', 'p_free_blade_heal'] },
+    cannon: { id: 'cannon', label: '手炮', pool: ['p_impact_homing', 'p_free_cannon_damage', 'p_free_cannon_suppress',
+      'p_free_cannon_pierce', 'p_free_cannon_range', 'p_free_cannon_spread', 'p_free_cannon_focus', 'p_free_cannon_speed'] }
+  };
+  function getStyle(id) {
+    return Object.prototype.hasOwnProperty.call(STYLES, id) ? STYLES[id] : STYLES.sweep;
+  }
+  function stylePerk(s, id) {
+    var selected = getStyle(s.free && s.free.style);
+    if (selected.pool.indexOf(id) < 0) return null;
+    return C.core.perks.FREE_WEAPON[id] || C.core.perks.LOOP[id];
+  }
   function offer(s) {
-    var perks = C.core.perks;
-    /* M11 四强化中的两项武器改装定义在 IMPACT 独立池，这里只把它们并入主模式
-     * 候选（定义不动）；screens.perkDefinition 已能解析 IMPACT id。 */
-    var table = Object.assign({}, perks.LOOP);
-    var mods = { p_impact_reach: perks.IMPACT.p_impact_reach,
-                 p_impact_homing: perks.IMPACT.p_impact_homing };
-    Object.keys(mods).forEach(function (id) { if (mods[id] && !table[id]) table[id] = mods[id]; });
-    var ids = Object.keys(table).filter(function (id) {
-      return (s.perks[id] || 0) < (table[id].max || 2);
+    var available = getStyle(s.free && s.free.style).pool.filter(function (id) {
+      return (s.perks[id] || 0) < stylePerk(s, id).max;
     });
-    var routes = ids.filter(function (id) { return table[id].route; });
-    var rest = ids.filter(function (id) { return !table[id].route; });
-    var pick = [], i = s.pickCount || 0;
-    if (routes.length) pick.push(routes[i % routes.length]);
-    while (pick.length < 3 && rest.length) pick.push(rest[(i++) % rest.length]);
-    while (pick.length < 3 && routes.length > pick.length) {
-      var next = routes[(i++) % routes.length];
-      if (pick.indexOf(next) === -1) pick.push(next);
-    }
-    return pick.slice(0, 3);
+    if (!available.length) return [];
+    var offset = (s.pickCount || 0) % available.length;
+    return available.slice(offset).concat(available.slice(0, offset)).slice(0, 3);
   }
   function loopRewards(s) {
     return { heal: s.perks.p_loop_mend ? 6 * s.perks.p_loop_mend : 0,
@@ -337,6 +338,7 @@
     var f = s.free;
     var data = { version: 1, seed: f.seed, layer: f.layer, roomInLayer: f.roomInLayer,
       hp: Math.max(1, Math.round(s.player.hp)), maxHp: s.player.maxHp,
+      style: f.style, weapon: f.weapon, shieldUsed: s.shieldUsed,
       gold: s.gold, perks: Object.assign({}, s.perks), pickCount: s.pickCount || 0,
       kills: s.kills, elapsed: Math.round(s.elapsed), theme: s.run.theme };
     try { localStorage.setItem(SAVE_KEY, JSON.stringify(data)); } catch (e) { return null; }
@@ -356,7 +358,7 @@
   function clearSave() { try { localStorage.removeItem(SAVE_KEY); } catch (e) { /* 忽略 */ } }
   function saveLabel() {
     var d = load();
-    return d ? '继续 · 第 ' + d.layer + ' 层 第 ' + (d.roomInLayer + 1) + ' 间' : '';
+    return d ? '继续' + getStyle(d.style).label + ' · 第 ' + d.layer + ' 层 第 ' + (d.roomInLayer + 1) + ' 间' : '';
   }
 
   C.core = C.core || {};
@@ -368,7 +370,7 @@
     create: create, arm: arm, reset: reset, record: record, close: close,
     report: report, craftKey: craftKey, craftEffect: craftEffect, craft: craft,
     live: live, decayCraft: decayCraft, EFFECT_LABEL: EFFECT_LABEL,
-    waveFrom: waveFrom, advanceWave: advanceWave,
+    waveFrom: waveFrom, advanceWave: advanceWave, STYLES: STYLES, getStyle: getStyle, stylePerk: stylePerk,
     shieldSpec: shieldSpec, matchesShield: matchesShield,
     offer: offer, loopRewards: loopRewards,
     save: save, load: load, hasSave: hasSave, clearSave: clearSave, saveLabel: saveLabel

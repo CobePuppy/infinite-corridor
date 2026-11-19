@@ -218,11 +218,10 @@
     }
   }
 
-  function inSwing(walls, e, x, y, dx, dy, reached) {
-    var w = B.blade;
+  function inSwing(walls, e, x, y, dx, dy, range, halfArc) {
     var ex = e.x - x, ey = e.y - y;
     var len = Math.hypot(ex, ey);
-    if (len > w.range + e.r + reached || (ex * dx + ey * dy) < len * Math.cos(w.halfArc)) return false;
+    if (len > range + e.r || (ex * dx + ey * dy) < len * Math.cos(halfArc)) return false;
     return !len || !castWall(walls, x, y, ex / len, ey / len, len);
   }
 
@@ -235,7 +234,7 @@
     sound('impactSwing');
     var redirected = false;
     s.enemies.forEach(function (e) {
-      if (!inSwing(s.walls, e, x, y, dx, dy, reached)) return;
+      if (!inSwing(s.walls, e, x, y, dx, dy, B.blade.range + reached, B.blade.halfArc)) return;
       if (strike(s, e, dx, dy, explicit, game)) redirected = true;
     });
     if (redirected && g.perk === 'p_impact_pursuit') {
@@ -261,7 +260,9 @@
     var candidates;
     if (g.weapon === 'blade') {
       var reached = C.core.enemyTrial.wallLimit(s.walls, p.x, p.y, dx, dy, B.lunge, p.r);
-      candidates = s.enemies.filter(function (e) { return inSwing(s.walls, e, p.x, p.y, dx, dy, reached); });
+      candidates = s.enemies.filter(function (e) {
+        return inSwing(s.walls, e, p.x, p.y, dx, dy, B.blade.range + reached, B.blade.halfArc);
+      });
     } else {
       var wall = castWall(s.walls, p.x, p.y, dx, dy, B.cannon.range);
       var targets = rayTargets(s.enemies, p.x, p.y, dx, dy, wall ? wall.distance : B.cannon.range);
@@ -517,6 +518,6 @@
 
   C.core.impact = {
     weapons: WEAPONS, hasWeapon: hasWeapon, walls: WALLS, reflector: REFLECTOR, shortWall: SHORT_WALL,
-    start: start, choose: choose, update: update
+    start: start, choose: choose, update: update, inSwing: inSwing
   };
 })(window.Corridor = window.Corridor || {});

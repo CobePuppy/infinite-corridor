@@ -38,7 +38,7 @@
     p_lifesteal:  { id: 'p_lifesteal',  name: '汲血', rarity: 'epic',   max: 3,        tag: '续航', desc: '每次命中回复 1 点生命' },
     p_slowaura:   { id: 'p_slowaura',   name: '寒域', rarity: 'rare',   max: 2,        tag: '控制', desc: '身周敌人移动速度额外 -20%' },
     p_chainboost: { id: 'p_chainboost', name: '引流', rarity: 'rare',   max: 2,        tag: '爆发', desc: '连锁概率 +15%，波及范围与伤害提升' },
-    p_overload:   { id: 'p_overload',   name: '过载', rarity: 'rare',   max: 2,        tag: '输出', desc: '连击每达到 5 层，子弹伤害 +2' },
+    p_overload:   { id: 'p_overload',   name: '过载', rarity: 'rare',   max: 2,        tag: '输出', desc: '每 5 连击使攻击伤害 +2。自由回廊每次攻击最多 +2。' },
     p_frost:      { id: 'p_frost',      name: '霜击', rarity: 'common', max: 2,        tag: '控制', desc: '命中使敌人短暂减速' },
 
     /* ③ 协同层 —— 组合质变（4 个，含基础增幅 + synergy 解锁） */
@@ -113,6 +113,20 @@
     p_impact_homing: {
       name: '导引', rarity: 'epic', tag: '手炮', desc: '点射改为追踪弹，飞行中会朝最近的敌人转向。'
     }
+  };
+  var FREE_WEAPON = {
+    p_free_blade_reach: { name: '长锋', rarity: 'rare', max: 2, tag: '大剑', desc: '大剑挥击范围更远，扇面更宽。' },
+    p_free_blade_damage: { name: '重斩', rarity: 'rare', max: 3, tag: '大剑', desc: '大剑基础伤害 +2。' },
+    p_free_blade_speed: { name: '快斩', rarity: 'common', max: 3, tag: '大剑', desc: '大剑动作和攻击冷却每层缩短 8%。' },
+    p_free_blade_heal: { name: '吸血斩', rarity: 'epic', max: 2, tag: '大剑', desc: '每次挥击首次命中敌人时，每层回复 1 点生命。' },
+    p_impact_homing: Object.assign({ max: 1 }, IMPACT.p_impact_homing),
+    p_free_cannon_damage: { name: '重弹', rarity: 'rare', max: 3, tag: '手炮', desc: '每发手炮弹基础伤害 +1。' },
+    p_free_cannon_pierce: { name: '穿甲弹', rarity: 'rare', max: 2, tag: '手炮', desc: '每发手炮弹额外穿透 1 个敌人。' },
+    p_free_cannon_spread: { name: '散射', rarity: 'epic', max: 2, tag: '手炮', desc: '手炮每次开火额外射出 1 发副弹。副弹造成主弹一半的伤害。' },
+    p_free_cannon_speed: { name: '快枪', rarity: 'common', max: 3, tag: '手炮', desc: '手炮攻击冷却每层缩短 8%。' },
+    p_free_cannon_range: { name: '远射', rarity: 'common', max: 2, tag: '手炮', desc: '手炮射程每层增加 20%。' },
+    p_free_cannon_focus: { name: '稳射', rarity: 'rare', max: 2, tag: '手炮', desc: '副弹偏离瞄准方向的角度每层缩小 20%。' },
+    p_free_cannon_suppress: { name: '压制', rarity: 'rare', max: 2, tag: '手炮', desc: '主弹命中使敌人减速 0.65 秒，减速幅度每层增加 18 个百分点。' }
   };
 
   /* ---- T28 集成修复：UI 展示元数据（表外注入，冻结区字面值一行未动） ----
@@ -226,9 +240,11 @@
       areaMid: 60000, areaBig: 110000,
       bendAngle: 0.62, bendMin: 3,
       streakStep: 0.16, streakCap: 3, streakWindow: 26,
-      bulletMul: 0.34,
-      layers: 3, roomsPerLayer: 3, enemyDamage: 8,
+      bulletMul: 0.20, bladeDamage: 7,
+      layers: 3, roomsPerLayer: 3, enemyHp: 40, enemyDamage: 8,
       bossHp: 190, bossDamage: 8,
+      enemyGrowth: { hpPerRoom: 5, damagePerRoom: 0.8, speedPerRoom: 0.025,
+        bossHpPerLayer: 0.30, bossDamagePerLayer: 2, bossSpeedPerLayer: 0.10 },
       tile: { goodDamage: 1.22, goodSpeed: 1.12, goodCd: 0.86,
               badDamage: 0.80, badSpeed: 0.88, badCd: 1.18, badHurt: 1.25,
               count: 14 },
@@ -240,14 +256,23 @@
         speedStep: 0.13, speedCap: 1.6
       },
       /* M11 四强化在主模式里的效果数值（词条定义仍在 IMPACT / LOOP 独立池）：
-       * 导引 → 子弹升级为可转向的投射物实体；长锋 → 回扫路径容差变宽；
+       * 导引 → 子弹升级为可转向的投射物实体；长锋 → 扩大挥击范围和回扫路径容差；
        * 顺锋 → 命中取消后摇；连段升段 → 垫步接上下一刀。 */
       mod: {
         homingTurn: 3.4, homingLife: 1.05, homingSpeed: 560,
-        reachWidth: 26,
-        cdCutBase: 0.14, cdCutPerTier: 0.10, cdCutPerk: 0.10,
+        reachWidth: 26, bladeArcPerReach: 0.12,
+        cdCutBase: 0.10, cdCutPerTier: 0.06, cdCutPerk: 0.10,
         stepPx: 10
       },
+      bladeAction: {
+        windup: 0.072, sweep: 0.108, recovery: 0.105, inputBuffer: 0.12,
+        contactLife: 0.20, recoilTime: 0.16, recoil: 9, heavyRecoil: 14, bossRecoil: 6,
+        followHitMul: 0.65
+      },
+      cannonAction: { recoilTime: 0.14, muzzleTime: 0.056, smokeTime: 0.18, contactLife: 0.19, hitSoundGap: 0.07,
+        muzzleReach: 30, recoilDistance: 8, secondaryDamageMul: 0.50 },
+      weaponPerks: { bladeDamage: 2, bladeHeal: 1, cannonDamage: 1, speedCut: 0.08, overloadCap: 2,
+        cannonRange: 0.20, cannonFocus: 0.20, cannonSuppress: 0.18, cannonSuppressTime: 0.65 },
       /* M13 圈型策略：把「换圈型」变成唯一涨连扫倍率的途径，重复同型逐次衰减；
        * 四种圈各有不可替代的效果。数值只放这里，判定在 freewave.js / engine.js。
        * 不改上面的 damage* / area* / streak*，因此 M11 冻结基线不受影响。 */
@@ -395,7 +420,10 @@
         if (Math.random() < d.critChance) payload.damage *= 2, payload.crit = true;
         payload.range += d.rangeBonus * 46;
         /* 新增：连击过载增伤 / 穿透 / 暴击穿透全屏 / 多重射击 / 卫星数 */
-        if (d.comboDamage > 0) payload.damage += d.comboDamage * Math.floor((state.combo || 0) / BALANCE.comboStep);
+        if (d.comboDamage > 0) {
+          var comboBonus = d.comboDamage * Math.floor((state.combo || 0) / BALANCE.comboStep);
+          payload.damage += state.free ? Math.min(comboBonus, BALANCE.free.weaponPerks.overloadCap) : comboBonus;
+        }
         payload.pierce = d.pierce + ((payload.crit && d.synergy.critPierceFull) ? 99 : 0);
         payload.multishot = d.multishot;
         payload.spread = BALANCE.spread;
@@ -453,7 +481,7 @@
   C.core = C.core || {};
   C.core.perks = {
     TABLE: TABLE, IDS: IDS, RARITY_LABEL: RARITY_LABEL, RARITY_RANK: RARITY_RANK,
-    BALANCE: BALANCE, RECALL: RECALL, IMPACT: IMPACT, LOOP: LOOP,
+    BALANCE: BALANCE, RECALL: RECALL, IMPACT: IMPACT, LOOP: LOOP, FREE_WEAPON: FREE_WEAPON,
     stacks: stacks, canOffer: canOffer, add: add, derive: derive, on: on,
     synergies: synergies,
     /* T28：UI 展示接口（不参与规则运算） */

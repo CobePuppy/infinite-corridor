@@ -41,6 +41,7 @@
       <div id="perk-chips" class="chips" aria-label="当前强化"></div>
       <div class="hud-actions">
         <span class="theme-tag">主题 <b id="hud-theme"></b></span>
+          <button id="btn-switch-weapon" class="mini-btn hidden" type="button" aria-keyshortcuts="Q"><span id="hud-weapon"></span> <kbd>Q</kbd></button>
         <button id="btn-mute" class="mini-btn" type="button" aria-keyshortcuts="M">音效 开</button>
         <button id="btn-pause" class="mini-btn" type="button" aria-keyshortcuts="Escape">暂停 <kbd>Esc</kbd></button>
       </div>
@@ -60,13 +61,13 @@
 
         <div class="home-modes" aria-label="战斗模式">
           <button id="btn-loop" class="mode-entry featured" type="button">
-            <span><b>自由回廊</b><small>自己选起点 · 用走过的路圈住敌人 · 凝滞 / 完美闪避 / 地效</small></span><span aria-hidden="true">→</span>
+            <span><b>自由回廊</b><small>选择回扫、大剑或手炮流派 · 局内可换武器</small></span><span aria-hidden="true">→</span>
           </button>
           <button id="btn-loop-continue" class="mode-entry continue hidden" type="button">
             <span><b>继续回廊</b><small>从上次离开的圈接着走</small></span><span aria-hidden="true">→</span>
           </button>
           <button id="btn-trial-setup" class="mode-entry" type="button">
-            <span><b>单房试玩</b><small>两拨连续战斗，出发前选武器与设置</small></span><span aria-hidden="true">→</span>
+            <span><b>武器试玩</b><small>大剑（重刃） / 手炮 · 单房两拨战斗</small></span><span aria-hidden="true">→</span>
           </button>
           <button id="btn-start" class="mode-entry" type="button">
             <span><b>经典射击</b><small>原版长局 · 探索房间、收集词条、挑战首领</small></span><span aria-hidden="true">→</span>
@@ -75,7 +76,7 @@
           <div class="home-experiments">
             <div class="mode-group">
               <label class="field compact" for="impact-weapon">武器
-                <select id="impact-weapon"><option value="blade">重刃</option><option value="cannon">手炮</option></select>
+                <select id="impact-weapon"><option value="blade">大剑（重刃）</option><option value="cannon">手炮</option></select>
               </label>
               <div class="button-row">
                 <button id="btn-impact" class="btn secondary" type="button">击飞接力</button>
@@ -101,17 +102,30 @@
         <div class="controls-inline"><span><kbd>WASD</kbd> 移动</span><span><kbd>左键</kbd> 攻击</span><span><kbd>Shift</kbd> 冲刺</span><span><kbd>E</kbd> 定起点</span><span><kbd>Esc</kbd> 暂停</span></div>
       </section>
 
+      <section id="screen-free-setup" class="panel trial-panel hidden" tabindex="-1" aria-labelledby="free-style-title">
+        <header class="panel-head">
+          <h2 id="free-style-title" class="panel-title">选择流派</h2>
+          <p class="panel-desc">选择本局的强化卡池。战斗中仍可用 Q 切换武器。</p>
+        </header>
+        <div class="home-modes">
+          <button id="btn-free-sweep" class="mode-entry featured" type="button"><span><b>回扫</b><small>闭环回血、刷新冲刺、强化破盾</small></span><span aria-hidden="true">→</span></button>
+          <button id="btn-free-blade" class="mode-entry" type="button"><span><b>大剑</b><small>开局持剑 · 强化挥击范围、伤害、攻速和吸血</small></span><span aria-hidden="true">→</span></button>
+          <button id="btn-free-cannon" class="mode-entry" type="button"><span><b>手炮</b><small>开局持枪 · 可强化追踪、穿透、散射、远射和压制</small></span><span aria-hidden="true">→</span></button>
+        </div>
+        <div class="start-actions"><button id="btn-free-back" class="btn secondary" type="button">返回首页 <kbd>Esc</kbd></button></div>
+      </section>
+
       <section id="screen-trial" class="panel trial-panel hidden" tabindex="-1" aria-labelledby="trial-title">
         <header class="panel-head">
-          <h2 id="trial-title" class="panel-title">单房试玩</h2>
-          <p class="panel-desc">选好设置，连续迎战两拨敌人。</p>
+          <h2 id="trial-title" class="panel-title">武器试玩</h2>
+          <p class="panel-desc">选好武器，连续迎战两拨敌人。</p>
         </header>
         <div class="trial-settings">
           <label class="field" for="trial-version">版本
             <select id="trial-version"><option value="A">版本 A</option><option value="B">版本 B</option></select>
           </label>
           <label class="field" for="trial-weapon">武器
-            <select id="trial-weapon"><option value="blade">重刃</option><option value="cannon">手炮</option></select>
+            <select id="trial-weapon"><option value="blade">大剑（重刃）</option><option value="cannon">手炮</option></select>
           </label>
           <label class="field" for="trial-preset">预设
             <select id="trial-preset"><option value="basic">预设 1</option><option value="skills">预设 2</option></select>
@@ -153,14 +167,17 @@
 
       <section id="screen-unlock" class="panel unlock-panel hidden" tabindex="-1" aria-labelledby="unlock-title">
         <header class="unlock-head">
-          <div><h2 id="unlock-title" class="panel-title">局外解锁</h2><p class="panel-desc">解锁后的词条会随原版长局开局装入。</p></div>
+          <div><h2 id="unlock-title" class="panel-title">局外解锁</h2><p class="panel-desc">已解锁词条自动装入「自由回廊」和「经典射击」。</p></div>
           <div class="unlock-head-right">
             <div class="wallet">金币 <b id="unlock-gold"></b></div>
             <button id="unlock-close" class="icon-btn" type="button" aria-label="关闭局外解锁">×</button>
           </div>
         </header>
         <div id="unlock-grid" class="unlock-grid" tabindex="0" aria-label="可解锁词条"></div>
-        <button id="unlock-back" class="btn secondary" type="button" data-from="start">返回 <kbd>Esc</kbd></button>
+        <div class="unlock-actions">
+          <button id="unlock-back" class="btn secondary" type="button" data-from="start">返回 <kbd>Esc</kbd></button>
+          <button id="unlock-reset" class="btn secondary" type="button">重置并返还金币</button>
+        </div>
       </section>
 
       <section id="screen-pause" class="panel pause-panel hidden" tabindex="-1" aria-labelledby="pause-title">

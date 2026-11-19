@@ -431,22 +431,25 @@ test('§E4 三层通关、层末换层事件、续玩恢复与通关后清档', 
 });
 
 test('§E5 UI 接线：自由回廊主入口 / 续玩 / 经典回廊可回退，LOOP 词条卡能渲染', async function () {
-  var started = 0, continued = 0, classic = 0, picked = null;
+  var started = null, continued = 0, classic = 0, picked = null;
   /* index.html 加载 main.js 时已 init 过一次；清掉旧监听再装测试监听，避免重复计数。
-   * M11「替代重做骨架」把主入口换成自由回廊：btn-loop→onFree、续玩→onFreeContinue，
-   * 原 onLoop 契约迁到 btn-loop-classic（可回退点）。此处按新契约重立基线。 */
+   * 自由回廊先显示流派，选中后再调用 onFree。经典回廊和续玩保留独立入口。 */
   els['btn-loop']._ev.click = [];
   els['btn-loop-continue']._ev.click = [];
+  els['btn-free-blade']._ev.click = [];
   document.getElementById('btn-loop-classic')._ev.click = [];
   S.init({ onStart: function () {},
-    onFree: function () { started++; }, onFreeContinue: function () { continued++; },
+    onFree: function (style) { started = style; }, onFreeContinue: function () { continued++; },
     onLoop: function () { classic++; }, onLoopContinue: function () {},
     onPick: function (id) { picked = id; },
     onRecall: function () {}, onImpact: function () {}, onImpactCombinations: function () {},
     onTrial: function () {}, onRestart: function () {}, onUnlock: function () {},
     onToggleMute: function () {}, onPause: function () {}, onResume: function () {}, onHome: function () {} });
   els['btn-loop'].click();
-  assert.equal(started, 1, 'M11 自由回廊主入口应接入 onFree');
+  assert.equal(S.current(), 'free-setup');
+  assert.equal(started, null);
+  els['btn-free-blade'].click();
+  assert.equal(started, 'blade');
   els['btn-loop-classic'].click();
   assert.equal(classic, 1, '经典回廊（旧版可回退）应仍接入 onLoop');
   reset();

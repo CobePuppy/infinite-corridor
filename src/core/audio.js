@@ -37,7 +37,7 @@
     osc.frequency.setValueAtTime(opts.from || 440, t0);
     if (opts.to) osc.frequency.exponentialRampToValueAtTime(Math.max(20, opts.to), t0 + dur);
     gain.gain.setValueAtTime(0.0001, t0);
-    gain.gain.exponentialRampToValueAtTime(opts.vol || 0.5, t0 + 0.008);
+    gain.gain.exponentialRampToValueAtTime(opts.vol || 0.5, t0 + (opts.attack || 0.008));
     gain.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
     osc.connect(gain);
     gain.connect(master);
@@ -74,6 +74,25 @@
     pick:   function () { tone({ from: 620, dur: 0.09, type: 'sine', vol: 0.3 }); tone({ from: 930, dur: 0.13, type: 'sine', vol: 0.25, delay: 0.07 }); },
     recall: function () { tone({ from: 660, to: 220, dur: 0.42, type: 'triangle', vol: 0.28 }); },
     impactSwing: function () { noise(0.065, 0.12, 1550); },
+    bladeSlash: function () {
+      noise(0.105, 0.21, 2100);
+      tone({ from: 290, to: 105, dur: 0.10, type: 'triangle', vol: 0.24 });
+    },
+    bladeContact: function (heavy) {
+      tone({ from: 155, to: 58, dur: heavy ? 0.19 : 0.15, attack: 0.003, vol: heavy ? 0.92 : 0.80 });
+      tone({ from: 310, to: 120, dur: 0.084, attack: 0.004, type: 'triangle', vol: 0.39 });
+      noise(0.125, 0.36, 620);
+    },
+    bladeGuard: function () { tone({ from: 1050, to: 410, dur: 0.11, type: 'triangle', vol: 0.42 }); },
+    cannonFire: function () {
+      noise(0.06, 0.42, 3600);
+      tone({ from: 210, to: 57, dur: 0.085, type: 'triangle', vol: 0.52 });
+    },
+    cannonContact: function () {
+      noise(0.052, 0.26, 2900);
+      tone({ from: 730, to: 260, dur: 0.064, type: 'triangle', vol: 0.31 });
+    },
+    cannonGuard: function () { tone({ from: 1540, to: 810, dur: 0.075, type: 'triangle', vol: 0.39 }); },
     impactWall: function () { tone({ from: 380, to: 230, dur: 0.11, type: 'triangle', vol: 0.25 }); },
     impactChain: function (depth) {
       var pitch = 360 + Math.min(depth, 6) * 92;

@@ -120,8 +120,8 @@
       case 'runStart':
         screens.show(null);
         if (p.free) {
-          screens.toast(p.continued ? ('续玩 · 第 ' + p.layer + ' 层') :
-            ('自由回廊 · 按 E 定起点，绕一圈回到起点'), 3200);
+          var style = C.core.freewave.getStyle(p.style).label;
+          screens.toast(style + '流派 · ' + (p.continued ? ('续玩第 ' + p.layer + ' 层') : 'E 定起点 · Q 换武器'), 3200);
           break;
         }
         if (p.loop) {
@@ -211,7 +211,7 @@
         else if (p && p.kind === 'elite') screens.toast('精英间 · 敌人更强，小心', 2200);
         break;
       case 'roomClear':
-        screens.toast('本间已清 · 出口开启' + (p.healed ? ' · 回响 +' + p.healed : ''), 2200);
+        screens.toast((p.free ? '本间已清' : '本间已清 · 出口开启') + (p.healed ? ' · 回响 +' + p.healed : ''), 2200);
         break;
       case 'bossEnter':
         screens.toast(p.shield ? ('巡廊者 · 护盾第 ' + p.shield.phase + ' 相位 · 需' + p.shield.requiredLabel + '破盾') :
@@ -262,7 +262,7 @@
       battleClock = 0;
       paused = false;
     } catch (e) {
-      screens.show(mode && mode.impactTrial ? 'trial' : 'start');
+      screens.show(mode && mode.impactTrial ? 'trial' : mode && mode.free && !mode.continueRun ? 'free-setup' : 'start');
       screens.toast('开局失败，请重试');
     } finally {
       starting = false;
@@ -271,12 +271,17 @@
 
   function restart() {
     var s = engine.getState();
-    if (s && s.free) return begin({ free: true });
+    if (s && s.free) return begin({ free: true, style: s.free.style });
     if (s && s.loop) return begin({ loop: true });
     if (s && s.impact) return begin({
       impactWeapon: s.impact.weapon, impactCombinations: s.impact.combinations, impactTrial: s.impact.trial
     });
     return begin(s && { prototype: s.prototype });
+  }
+
+  function switchWeapon() {
+    if (starting || paused || screens.current() || !engine.switchFreeWeapon()) return;
+    screens.updateHud(engine.getState());
   }
 
   /* B9：统一的暂停开关 —— 暂停时打开面板，继续时收起面板 */
@@ -288,7 +293,7 @@
       var trial = s.impact && s.impact.trial;
       document.getElementById('pause-context').textContent = s.room.name +
         (s.impact ? ' · 第 ' + s.impact.wave + ' / 2 组' : '');
-      document.getElementById('btn-pause-home').textContent = trial ? '返回单房设置' : '返回首页';
+      document.getElementById('btn-pause-home').textContent = trial ? '更换武器 / 设置' : '返回首页';
     }
     screens.show(paused ? 'pause' : null);
   }
@@ -309,7 +314,7 @@
       render.draw(ctx, s, battleClock, null, cue);
       screens.updateHud(s, cue);
     } else {
-      var backdrop = cur === 'start' || cur === 'trial' || cur === 'loading' || cur === 'unlock';
+      var backdrop = cur === 'start' || cur === 'free-setup' || cur === 'trial' || cur === 'loading' || cur === 'unlock';
       render.draw(ctx, backdrop ? null : engine.getState(), backdrop ? clock : battleClock);
     }
     requestAnimationFrame(loop);
@@ -329,7 +334,7 @@
 
     screens.init({
       onStart: begin,
-      onFree: function () { begin({ free: true }); },
+      onFree: function (style) { begin({ free: true, style: style }); },
       onFreeContinue: function () { begin({ free: true, continueRun: true }); },
       onLoop: function () { begin({ loop: true }); },
       onLoopContinue: function () { begin({ loop: true, continueRun: true }); },
@@ -349,14 +354,20 @@
       onUnlock: function (id) {
         var from = document.getElementById('unlock-back').dataset.from;
         var r = engine.unlock(id);
-        if (r.ok) { audio.play('pick'); screens.showUnlock(from === 'end'); screens.toast('已解锁 · 下局开局自带'); }
-        else screens.toast(r.reason === 'poor' ? '金币不足，需要 60' : '已经解锁过了');
+        if (r.ok) { audio.play('pick'); screens.showUnlock(from === 'end'); screens.toast('已解锁 · 进入自由回廊或经典射击后生效'); }
+        else screens.toast(r.reason === 'poor' ? '金币不足，需要 ' + engine.UNLOCK_COST : '无法重复解锁');
+      },
+      onResetUnlocks: function (fromEnd) {
+        var refund = engine.resetUnlocks();
+        screens.showUnlock(fromEnd);
+        if (refund) screens.toast('已重置局外技能 · 返还 ' + refund + ' 金币');
       },
       onToggleMute: function () {
         var m = !audio.isMuted();
         audio.setMuted(m);
         screens.setMuted(m);
       },
+      onSwitchWeapon: switchWeapon,
       onPause: function () { if (!starting && !screens.current()) setPaused(true); },
       /* B9：暂停面板三个出口 */
       onResume: function () { setPaused(false); },
@@ -385,7 +396,7 @@
          *  - 开始页 / 结算页 / 词条页 → 不叠加暂停（词条选择不可跳过）
          *  - 无弹窗（游戏中）→ 切换暂停并打开暂停面板 */
         if (cur === 'unlock') screens.backFromUnlock();
-        else if (cur === 'trial') screens.show('start');
+        else if (cur === 'trial' || cur === 'free-setup') screens.show('start');
         else if (cur === 'pause') setPaused(false);
         else if (cur === 'perk') screens.toast('请先选择一条路径', 1600);
         else if (cur === 'start' || cur === 'end') { /* 不叠加暂停 */ }
@@ -397,6 +408,7 @@
         return;
       }
       if (cur || paused) return;
+      if (k === 'q' && !e.repeat) { switchWeapon(); return; }
       if (k === ' ' && e.target && e.target.tagName === 'BUTTON') return;
       held[k] = true;
       if (!e.repeat && (k === ' ' || k === 'j')) input.attackPressed = true;

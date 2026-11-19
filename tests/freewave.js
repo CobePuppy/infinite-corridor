@@ -9,7 +9,7 @@
  *   §H5 帧循环端到端：真实 startRun → 走一圈 → 兑现事件与演出 → 波结算
  *   §H6 护盾相位：真实首领房的闭合 → 崩解 → 暴露窗口 → 重构 → 下一相位
  *   §H7 渲染：地效 / 路径 / 波 / 凝滞 / 闪避 / 连段 / 兑现 / 三态护盾确有画面
- *   §H8 四强化：IMPACT 改装进主模式候选、导引投射物实体、长锋容差、取消后摇
+ *   §H8 流派卡池隔离、续档、导引投射物实体、回扫容差
  *   §H9 静态接线与可回退点：经典回廊仍可启动、续玩回落、入口链路完整
  *
  * 边界：纯 Node、零依赖、零端口、零后台进程；不改 src/**、不改 smoke.js。
@@ -371,6 +371,56 @@ test('§H5 三层九间 + 层末首领可完整通关，通关清档并结算', 
   reset();
 });
 
+test('自由回廊九间房逐间增加怪物强度，层末首领的触碰伤害随层数增长', async function () {
+  reset();
+  localStorage.setItem('corridor.meta.v1', JSON.stringify({ gold: 9999, unlocked: [], clears: 0, testGoldGranted: true }));
+  var s = await beginFree();
+  var stats = [], bosses = [];
+  for (var layer = 1; layer <= Q.layers; layer++) {
+    for (var room = 0; room < Q.roomsPerLayer; room++) {
+      assert.equal(s.free.layer, layer);
+      assert.equal(s.free.roomInLayer, room);
+      var e = s.enemies.find(function (enemy) { return enemy.pattern === 'chase'; });
+      s.enemies = [e];
+      s.walls = [];
+      s.chrono = CH.create();
+      e.x = 110; e.y = 120;
+      s.player.x = 250; s.player.y = 120;
+      tick();
+      stats.push({ hp: e.maxHp, damage: e.damage, speed: e.x - 110 });
+      s.enemies = [];
+      tick();
+      assert.equal(E.choosePerk(s.perkPending[0]), true);
+    }
+    assert.equal(s.phase, 'boss');
+    var boss = s.enemies[0], p = s.player;
+    bosses.push({ hp: boss.maxHp, damage: boss.damage });
+    p.x = boss.x; p.y = boss.y; p.hp = p.maxHp; p.invuln = 0;
+    tick();
+    assert.equal(p.maxHp - p.hp, boss.damage);
+    s.enemies = [];
+    tick();
+  }
+  assert.equal(stats.length, 9);
+  assert.equal(stats[0].hp, 40);
+  assert.equal(stats[8].hp, 80);
+  assert.equal(stats[8].damage, 14);
+  for (var i = 1; i < stats.length; i++) {
+    assert.ok(stats[i].hp > stats[i - 1].hp);
+    assert.ok(stats[i].damage >= stats[i - 1].damage);
+    assert.ok(stats[i].speed > stats[i - 1].speed);
+  }
+  assert.deepEqual(bosses, [{ hp: 190, damage: 8 }, { hp: 247, damage: 10 }, { hp: 304, damage: 12 }]);
+  reset();
+});
+
+test('自由回廊的过载伤害有上限', function () {
+  var combo = { perks: { p_overload: 1 }, combo: 60 };
+  var shot = function () { return { damage: 10, range: 100, crit: false }; };
+  assert.equal(P.on(combo, 'attack', shot()).damage, 34);
+  assert.equal(P.on(Object.assign({ free: {} }, combo), 'attack', shot()).damage, 12);
+});
+
 test('§H5 损坏存档被判无效并回落新局', async function () {
   reset();
   localStorage.setItem(FW.SAVE_KEY, '{broken');
@@ -496,27 +546,41 @@ test('§H7 护盾三态与破盾爆发渲染签名两两不同', async function 
   reset();
 });
 
-/* ============ §H8 四强化 ============ */
-test('§H8 IMPACT 改装进主模式候选，choosePerk 接受并持久化', async function () {
+/* ============ §H8 流派与强化 ============ */
+test('§H8 三流派的卡池互斥，换武器和续档保留所选流派', async function () {
   reset();
-  var all = [], fake = { perks: {}, pickCount: 0 };
-  for (var n = 0; n < 24; n++) {
-    fake.pickCount = n;
-    FW.offer(fake).forEach(function (id) { if (all.indexOf(id) === -1) all.push(id); });
+  var seen = new Set();
+  for (var style of Object.values(FW.STYLES)) {
+    style.pool.forEach(function (id) {
+      assert.equal(seen.has(id), false);
+      assert.equal(P.IDS.includes(id), false);
+      seen.add(id);
+    });
+    var fake = { free: { style: style.id }, perks: {}, pickCount: 0 };
+    for (var n = 0; n < Q.layers * Q.roomsPerLayer; n++) {
+      var cards = FW.offer(fake);
+      assert.ok(cards.length > 0 && cards.every(function (id) { return style.pool.includes(id); }));
+      assert.equal(cards.length, new Set(cards).size);
+      fake.perks[cards[0]] = (fake.perks[cards[0]] || 0) + 1;
+      fake.pickCount++;
+    }
+    var s = await beginFree({ style: style.id });
+    assert.equal(s.free.weapon, style.id === 'blade' ? 'blade' : 'cannon');
+    var before = FW.offer(s);
+    assert.equal(E.switchFreeWeapon(), true);
+    assert.deepEqual(FW.offer(s), before);
+    s.enemies = [];
+    tick();
+    assert.deepEqual(s.perkPending, before);
+    var wrong = style.id === 'sweep' ? 'p_impact_homing' : 'p_loop_cd';
+    s.perkPending.push(wrong);
+    assert.equal(E.choosePerk(wrong), false);
+    assert.equal(E.choosePerk(before[0]), true);
+    var resumed = await beginFree({ continueRun: true });
+    assert.equal(resumed.free.style, style.id);
+    assert.equal(resumed.free.weapon, s.free.weapon);
+    assert.equal(resumed.perks[before[0]], 1);
   }
-  assert.ok(all.indexOf('p_impact_reach') !== -1, '长锋应可达');
-  assert.ok(all.indexOf('p_impact_homing') !== -1, '导引应可达');
-  assert.ok(all.indexOf('p_loop_cd') !== -1 && all.indexOf('p_loop_dodge') !== -1);
-  assert.equal(P.IDS.indexOf('p_impact_reach'), -1, '冻结 IDS 不得被污染');
-  assert.equal(P.IDS.indexOf('p_loop_cd'), -1);
-  var s = await beginFree();
-  steady(s);
-  s.enemies.forEach(function (e) { e.dead = true; });
-  s.enemies = [];
-  tick();
-  s.perkPending = ['p_impact_homing', 'p_loop_cd', 'p_impact_reach'];
-  assert.equal(E.choosePerk('p_impact_homing'), true);
-  assert.equal(s.perks.p_impact_homing, 1);
   reset();
 });
 
@@ -564,10 +628,10 @@ test('§H9 六层静态接线契约：入口 / 输入 / 引擎 / HUD / 渲染 / 
   var en = fs.readFileSync(path.join(ROOT, 'src/core/engine.js'), 'utf8');
   assert.ok(en.indexOf('if (opts.free && C.core.freewave) return startFree(opts);') !== -1);
   assert.ok(en.indexOf('if (s && s.free) return updateFree(s, dt, input);') !== -1);
-  assert.ok(en.indexOf('function freeCancel(s)') !== -1 && en.indexOf('q.mod.homingTurn') !== -1);
+  assert.ok(en.indexOf('function freeCancel(s, weaponHit)') !== -1 && en.indexOf('q.mod.homingTurn') !== -1);
   assert.ok(en.indexOf('FW.distanceToPoly(poly, e)') !== -1);
   var sc = fs.readFileSync(path.join(ROOT, 'src/ui/screens.js'), 'utf8');
-  assert.ok(sc.indexOf('onFree && handlers.onFree()') !== -1);
+  assert.ok(sc.indexOf("show('free-setup')") !== -1 && sc.indexOf('handlers.onFree(id)') !== -1);
   assert.ok(sc.indexOf('C.core.loop.saveLabel()') !== -1, '经典存档必须仍可回落');
   var rd = fs.readFileSync(path.join(ROOT, 'src/ui/render.js'), 'utf8');
   ['drawFreeTiles', 'drawFreePath', 'drawFreeDodge'].forEach(function (fn) {

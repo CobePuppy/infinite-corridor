@@ -42,7 +42,7 @@
   var ENEMY_R = 15;
   var EXIT_R = 34;
 
-  function A(name) { C.core.audio.play(name); }
+  function A(name, detail) { C.core.audio.play(name, detail); }
   function emit(s, type, payload) { if (s && s.onEvent) s.onEvent(type, payload || {}); }
   function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
   function rand(a, b) { return a + Math.random() * (b - a); }
@@ -59,25 +59,46 @@
 
   /* ---------- 元数据 / 局外解锁 ---------- */
   var META_KEY = 'corridor.meta.v1';
+  var TEST_GOLD = 9999;
+  var UNLOCK_COST = 60;
   function loadMeta() {
     try {
       var m = JSON.parse(localStorage.getItem(META_KEY));
-      if (m && typeof m === 'object') meta = m;
+      if (m && typeof m === 'object' && !Array.isArray(m)) meta = m;
     } catch (e) { /* 忽略损坏存档 */ }
     if (!meta) meta = { gold: 0, unlocked: [], runs: 0, clears: 0, bestSeconds: 0 };
     if (!Array.isArray(meta.unlocked)) meta.unlocked = [];
+    if (!meta.testGoldGranted) {
+      var balance = Number.isFinite(meta.gold) ? meta.gold : 0;
+      meta.gold = Math.max(balance, TEST_GOLD);
+      meta.testGoldGranted = true;
+      saveMeta();
+    }
     return meta;
   }
   function saveMeta() {
     try { localStorage.setItem(META_KEY, JSON.stringify(meta)); } catch (e) { /* 无痕模式忽略 */ }
   }
   function unlock(id) {
+    loadMeta();
+    if (C.core.perks.IDS.indexOf(id) < 0) return { ok: false, reason: 'invalid' };
     if (meta.unlocked.indexOf(id) !== -1) return { ok: false, reason: 'already' };
-    if (meta.gold < 60) return { ok: false, reason: 'poor' };
-    meta.gold -= 60;
+    if (meta.gold < UNLOCK_COST) return { ok: false, reason: 'poor' };
+    meta.gold -= UNLOCK_COST;
     meta.unlocked.push(id);
     saveMeta();
     return { ok: true };
+  }
+  function resetUnlocks() {
+    loadMeta();
+    if (!meta.unlocked.length) return 0;
+    var owned = new Set(meta.unlocked);
+    var count = C.core.perks.IDS.filter(function (id) { return owned.has(id); }).length;
+    var refund = count * UNLOCK_COST;
+    meta.unlocked = [];
+    meta.gold += refund;
+    saveMeta();
+    return refund;
   }
 
   /* ---------- 墙体：按 shape 生成程序化布局 ---------- */
@@ -589,32 +610,38 @@
       { x: 440, y: 268, w: 80, h: 64 }
     ];
   }
-  function freeEnemy(s, x, y, pattern, hp) {
-    var e = makeEnemy({ hp: hp, damage: B.free.enemyDamage, pattern: pattern,
+  function freeEnemy(x, y, pattern, stats) {
+    var e = makeEnemy({ hp: stats.hp, damage: stats.damage, pattern: pattern,
                         type: '巡廊残影' }, false, 'teal', { x: x, y: y });
     e.mode = 'idle'; e.timer = 0.5 + rand(0.2, 0.9);
     e.lockX = 0; e.lockY = 1;
     e.freeId = 'f' + (++freeSeq);
+    e.freeSpeed = stats.speed;
     return e;
   }
   function setupFreeRoom(s) {
-    var f = s.free, FW = C.core.freewave;
+    var f = s.free, FW = C.core.freewave, q = B.free;
     s.walls = freeWalls();
     s.roomIndex = f.roomInLayer;
     s.room = { name: '第 ' + f.layer + ' 层 · 第 ' + (f.roomInLayer + 1) + ' 间',
                shape: 'free', color_token: 'teal',
                path_hint: '按 E 定起点，绕一圈回到起点兑现；踩增幅格、避开滞涩格' };
     s.roomType = 'normal';
+    var depth = (f.layer - 1) * q.roomsPerLayer + f.roomInLayer;
+    var growth = q.enemyGrowth;
+    var stats = { hp: q.enemyHp + depth * growth.hpPerRoom,
+      damage: q.enemyDamage + Math.floor(depth * growth.damagePerRoom), speed: 1 + depth * growth.speedPerRoom };
     var n = 3 + f.roomInLayer + f.layer;
     s.enemies = [];
     for (var i = 0; i < n; i++) {
       var a = i * Math.PI * 2 / n;
-      s.enemies.push(freeEnemy(s, 480 + Math.cos(a) * 250, 300 + Math.sin(a) * 175,
-        i % 3 === 0 ? 'charge' : (i % 3 === 1 ? 'chase' : 'ranged'), 32 + f.layer * 8));
+      s.enemies.push(freeEnemy(480 + Math.cos(a) * 250, 300 + Math.sin(a) * 175,
+        i % 3 === 0 ? 'charge' : (i % 3 === 1 ? 'chase' : 'ranged'), stats));
     }
     s.bullets = []; s.enemyBullets = []; s.exitActive = false;
     s.phase = 'playing';
     f.boss = false; f.wave = null;
+    resetFreeWeaponFx(f);
     f.tiles = FW.tiles(f.seed + '-' + f.layer + '-' + f.roomInLayer);
     f.tileBuff = null; f.lastTile = null;
     FW.reset(f);
@@ -629,19 +656,21 @@
                            total: B.free.roomsPerLayer, free: true, layer: f.layer });
   }
   function setupFreeBoss(s) {
-    var f = s.free, FW = C.core.freewave;
+    var f = s.free, FW = C.core.freewave, q = B.free;
     s.walls = freeWalls();
     s.roomIndex = B.free.roomsPerLayer;
     s.room = { name: '第 ' + f.layer + ' 层 · 巡廊者', shape: 'free', color_token: 'rust',
                path_hint: '按当前相位要求的圈型破盾，破盾后趁窗口输出' };
     s.roomType = 'normal'; s.bossPhase = 1;
-    s.run.boss = { name: '巡廊者', hp: Math.round(B.free.bossHp * (1 + 0.2 * (f.layer - 1))),
-                   damage: B.free.bossDamage, pattern: 'ranged' };
-    var boss = makeEnemy({ hp: s.run.boss.hp, damage: B.free.bossDamage,
+    var level = f.layer - 1, growth = q.enemyGrowth;
+    s.run.boss = { name: '巡廊者', hp: Math.round(q.bossHp * (1 + growth.bossHpPerLayer * level)),
+                   damage: q.bossDamage + growth.bossDamagePerLayer * level, pattern: 'ranged' };
+    var boss = makeEnemy({ hp: s.run.boss.hp, damage: s.run.boss.damage,
                            pattern: 'ranged', type: '巡廊者' }, true, 'rust', { x: 700, y: 300 });
     if (boss) {
       boss.r = 28; boss.guardOpen = 0; boss.shieldFlash = 0;
       boss.freeId = 'boss';
+      boss.freeSpeed = 1 + growth.bossSpeedPerLayer * level;
       boss.patrol = { hub: 1, cursor: 0, phase: 1, route: null, warning: 0 };
       boss.shield = { state: 'closed', breaks: 0, charge: 0, flash: 0, reform: 0,
                       spec: FW.shieldSpec(0, s.perks) };
@@ -650,6 +679,7 @@
     s.bullets = []; s.enemyBullets = []; s.exitActive = false;
     s.phase = 'boss';
     f.boss = true; f.wave = null;
+    resetFreeWeaponFx(f);
     FW.reset(f);
     s.closure = null; s.breakFlash = 0;
     s.player.x = 260; s.player.y = 300;
@@ -678,23 +708,52 @@
     state.dodgeFlash = 0; state.comboFlash = 0; state.comboTier = 0;
     state.chrono = CH.create();
     state.free = FW.create(seed);
+    state.free.style = FW.getStyle(saved ? saved.style : opts.style).id;
+    state.free.weapon = saved && saved.weapon ? (saved.weapon === 'blade' ? 'blade' : 'cannon') :
+      (state.free.style === 'blade' ? 'blade' : 'cannon');
     if (saved) {
       state.free.layer = saved.layer;
       state.free.roomInLayer = saved.roomInLayer;
       state.free.continued = true;
       state.player.maxHp = saved.maxHp || 100;
       state.player.hp = Math.min(state.player.maxHp, Math.max(1, saved.hp || 1));
+      state.shieldUsed = saved.shieldUsed === true;
       state.gold = saved.gold || 0;
       state.perks = Object.assign({}, saved.perks || {});
       state.pickCount = saved.pickCount || 0;
       state.kills = saved.kills || 0;
       state.elapsed = saved.elapsed || 0;
     } else FW.clearSave();
+    syncFreeUnlocks(state);
     setupFreeRoom(state);
     A('start');
-    emit(state, 'runStart', { free: true, layer: state.free.layer,
+    emit(state, 'runStart', { free: true, style: state.free.style, layer: state.free.layer,
                               continued: !!saved, run: run, runIndex: state.free.layer });
     return state;
+  }
+
+  function syncFreeUnlocks(s) {
+    /* 自由回廊的清房词条和局外解锁使用独立 ID。旧存档里缓存的局外技能以当前解锁为准。 */
+    var perks = C.core.perks;
+    var owned = new Set(meta.unlocked);
+    var oldMaxHp = perks.derive(s).maxHp;
+    perks.IDS.forEach(function (id) { if (!owned.has(id)) delete s.perks[id]; });
+    var removedHp = oldMaxHp - perks.derive(s).maxHp;
+    if (removedHp > 0) {
+      s.player.maxHp = Math.max(1, s.player.maxHp - removedHp);
+      s.player.hp = Math.min(s.player.hp, s.player.maxHp);
+    }
+    meta.unlocked.forEach(function (id) {
+      if (!s.perks[id]) perks.add(s, id);
+    });
+  }
+
+  function switchFreeWeapon() {
+    var s = state;
+    if (!s || !s.free || (s.phase !== 'playing' && s.phase !== 'boss')) return false;
+    s.free.weapon = s.free.weapon === 'blade' ? 'cannon' : 'blade';
+    s.free.bladeBuffer = 0;
+    return true;
   }
 
   function freeBoss(s) {
@@ -751,10 +810,11 @@
     }
   }
   /* ① 取消后摇：命中即清掉一部分剩余攻击冷却，连段越顺、顺锋层数越高清得越多。 */
-  function freeCancel(s) {
+  function freeCancel(s, weaponHit) {
     var m = B.free.mod;
     var tier = C.core.chrono.tier(s.combo || 0);
-    var cut = m.cdCutBase + m.cdCutPerTier * tier + m.cdCutPerk * (s.perks.p_loop_cd || 0);
+    var routeCut = weaponHit ? 0 : m.cdCutPerk * (s.perks.p_loop_cd || 0);
+    var cut = m.cdCutBase + m.cdCutPerTier * tier + routeCut;
     s.player.fireCd = Math.max(0, s.player.fireCd * (1 - Math.min(0.8, cut)));
   }
   function onFreeClosed(s, closed) {
@@ -777,7 +837,7 @@
     if (boss && boss.shield) {
       var sh = boss.shield, spec = sh.spec;
       if (sh.state === 'exposed') {
-        damageEnemy(s, boss, Math.round(damage * spec.exposedWaveMul), true, 1);
+        if (damageEnemy(s, boss, Math.round(damage * spec.exposedWaveMul), true, 0)) applyHitPerks(s, boss);
         emit(s, 'bossShieldHit', { exposed: true });
       } else if (sh.state !== 'reforming') {
         var matched = FW.matchesShield(rep, spec.required);
@@ -827,11 +887,148 @@
     if (cr.switched) emit(s, 'craftSwitch', { streak: cr.streak, mul: cr.mul, label: rep.label });
   }
 
+  function hitFreeEnemy(s, e, damage, crit, weaponAttack) {
+    if (!damageEnemy(s, e, damage, crit, 0, !!weaponAttack)) return false;
+    applyHitPerks(s, e);
+    freeCombo(s, 1);
+    if (!weaponAttack || !weaponAttack.recovered) {
+      freeCancel(s, !!weaponAttack);
+      if (weaponAttack) weaponAttack.recovered = true;
+    }
+    return true;
+  }
+
+  function resetFreeWeaponFx(f) {
+    f.swing = null;
+    f.bladeBuffer = 0;
+    f.bladeContacts = [];
+    f.bladeDirection = 1;
+    f.cannonShot = null;
+    f.cannonContacts = [];
+    f.cannonContactSound = -Infinity;
+    f.cannonSpreadDirection = 1;
+  }
+
+  function advanceFreeBlade(s, dt) {
+    var f = s.free, sw = f.swing;
+    if (!sw) return;
+    var from = sw.progress;
+    sw.age += dt;
+    sw.progress = clamp((sw.age - sw.windup) / sw.sweep, 0, 1);
+    if (sw.progress > from) {
+      if (from === 0) A('bladeSlash');
+      var p = s.player;
+      sw.x = p.x; sw.y = p.y;
+      var center = sw.angle + sw.direction * sw.halfArc * (from + sw.progress - 1);
+      var halfStep = sw.halfArc * (sw.progress - from) + 0.001;
+      var dx = Math.cos(center), dy = Math.sin(center);
+      var contact = false, blocked = false;
+      var tuning = B.free.bladeAction;
+      var targets = [];
+      s.enemies.forEach(function (e) {
+        if (e.dead || sw.hit.has(e) || !C.core.impact.inSwing(s.walls, e, sw.x, sw.y, dx, dy, sw.range, halfStep)) return;
+        var angle = Math.atan2(e.y - sw.y, e.x - sw.x);
+        var offset = angle - sw.angle;
+        targets.push({ enemy: e, angle: angle, order: sw.direction * Math.atan2(Math.sin(offset), Math.cos(offset)),
+          distance: Math.hypot(e.x - sw.x, e.y - sw.y) });
+      });
+      targets.sort(function (a, b) { return a.order - b.order || a.distance - b.distance; });
+      targets.forEach(function (target) {
+        var e = target.enemy, angle = target.angle;
+        if (e.dead) return;
+        sw.hit.add(e);
+        var damage = Math.max(1, Math.floor(sw.damage * Math.pow(tuning.followHitMul, sw.landed)));
+        var landed = hitFreeEnemy(s, e, damage, sw.crit, sw);
+        var strong = landed && (e.dead || e.isBoss || sw.crit);
+        if (landed) {
+          contact = true;
+          if (sw.landed === 0) {
+            A('bladeContact', strong);
+            var heal = (s.perks.p_free_blade_heal || 0) * B.free.weaponPerks.bladeHeal;
+            p.hp = Math.min(p.maxHp, p.hp + heal);
+          }
+          sw.landed++;
+          if (!e.dead) {
+            var distance = e.isBoss ? tuning.bossRecoil : strong ? tuning.heavyRecoil : tuning.recoil;
+            e.bladeRecoil = { angle: angle, direction: sw.direction, distance: distance, life: tuning.recoilTime };
+          }
+        } else blocked = true;
+        f.bladeContacts.push({ x: e.x - Math.cos(angle) * e.r * 0.6, y: e.y - Math.sin(angle) * e.r * 0.6,
+          angle: angle, direction: sw.direction, kind: strong ? 'heavy' : (landed ? 'hit' : 'guard'),
+          life: tuning.contactLife, max: tuning.contactLife });
+      });
+      if (!contact && blocked) A('bladeGuard');
+    }
+    if (sw.age >= sw.windup + sw.sweep + sw.recovery) f.swing = null;
+  }
+
+  function attackFree(s) {
+    var p = s.player, f = s.free, q = B.free, bladeSpec = B.impact.blade;
+    var blade = f.weapon === 'blade';
+    var reachLevel = (s.perks.p_impact_reach || 0) + (s.perks.p_free_blade_reach || 0);
+    var homing = !blade && s.perks.p_impact_homing > 0;
+    var speed = homing ? q.mod.homingSpeed : BULLET_SPEED;
+    var baseRange = blade ? bladeSpec.range + reachLevel * q.mod.reachWidth :
+      speed * (homing ? q.mod.homingLife : 0.55);
+    var tuning = q.weaponPerks;
+    var baseDamage = blade ? q.bladeDamage + (s.perks.p_free_blade_damage || 0) * tuning.bladeDamage :
+      BULLET_DMG * q.bulletMul + (s.perks.p_free_cannon_damage || 0) * tuning.cannonDamage;
+    var atk = C.core.perks.on(s, 'attack', { damage: baseDamage, range: baseRange, crit: false });
+    var damage = Math.max(1, Math.round(atk.damage * f.tileBuff.damage * C.core.chrono.buffDamage(s.chrono)));
+    var speedLevel = (blade ? s.perks.p_free_blade_speed : s.perks.p_free_cannon_speed) || 0;
+    var tempo = f.tileBuff.cd * (1 - C.core.chrono.buffCd(s.chrono)) * Math.pow(1 - tuning.speedCut, speedLevel);
+    p.fireCd = (blade ? bladeSpec.cooldown : FIRE_CD) * tempo;
+    if (blade) {
+      var bladeAction = q.bladeAction;
+      var halfArc = bladeSpec.halfArc + reachLevel * q.mod.bladeArcPerReach;
+      f.swing = { age: 0, progress: 0, x: p.x, y: p.y, angle: p.angle, direction: f.bladeDirection,
+        range: atk.range, halfArc: halfArc, damage: damage, crit: atk.crit, hit: new Set(), landed: 0, recovered: false,
+        windup: bladeAction.windup * tempo, sweep: bladeAction.sweep * tempo, recovery: bladeAction.recovery * tempo };
+      f.bladeDirection *= -1;
+      f.bladeBuffer = 0;
+      return;
+    }
+    f.swing = null;
+    f.cannonShot = { age: 0, x: p.x, y: p.y, angle: p.angle };
+    var spread = atk.multishot + (s.perks.p_free_cannon_spread || 0);
+    var pierce = atk.pierce + (s.perks.p_free_cannon_pierce || 0);
+    var range = atk.range * (1 + (s.perks.p_free_cannon_range || 0) * tuning.cannonRange);
+    var spreadAngle = atk.spread * (1 - (s.perks.p_free_cannon_focus || 0) * tuning.cannonFocus);
+    var suppress = 1 - (s.perks.p_free_cannon_suppress || 0) * tuning.cannonSuppress;
+    var side = f.cannonSpreadDirection;
+    if (spread % 2) f.cannonSpreadDirection *= -1;
+    var volley = { recovered: false };
+    for (var i = 0; i <= spread; i++) {
+      var secondary = i > 0;
+      var slot = Math.ceil(i / 2) * (i % 2 ? side : -side);
+      var angle = p.angle + slot * spreadAngle;
+      var ca = Math.cos(angle), sa = Math.sin(angle);
+      s.bullets.push({ x: p.x + ca * 14, y: p.y + sa * 14, vx: ca * speed, vy: sa * speed,
+        damage: secondary ? Math.max(1, Math.floor(damage * q.cannonAction.secondaryDamageMul)) : damage,
+        life: range / speed, r: 4, color: '#E9A23B', secondary: secondary, suppress: secondary ? 1 : suppress,
+        crit: atk.crit, pierce: pierce, hit: [], homing: homing, volley: volley });
+    }
+    A('cannonFire');
+  }
+
+  function cannonContact(s, b, e, landed) {
+    var f = s.free, tuning = B.free.cannonAction;
+    var angle = Math.atan2(b.vy, b.vx);
+    f.cannonContacts.push({ x: b.x, y: b.y, angle: angle, guard: !landed,
+      heavy: landed && (b.crit || e.dead), life: tuning.contactLife });
+    if (s.elapsed - f.cannonContactSound >= tuning.hitSoundGap) {
+      f.cannonContactSound = s.elapsed;
+      A(landed ? 'cannonContact' : 'cannonGuard');
+    }
+  }
+
   function updateFree(s, dt, input) {
     var f = s.free, FW = C.core.freewave, CH = C.core.chrono, q = B.free;
     var p = s.player;
     dt = Math.min(dt, 0.05);
     if (s.phase === 'dead' || s.phase === 'won' || s.phase === 'perk') return s;
+    if (f.weapon === 'blade' && input.attackPressed) f.bladeBuffer = q.bladeAction.inputBuffer;
+    var d = C.core.perks.derive(s);
     s.elapsed += dt;
     CH.push(s.chrono, s.elapsed, p);
     CH.update(s.chrono, dt);
@@ -842,6 +1039,9 @@
     s.dodgeFlash = Math.max(0, s.dodgeFlash - dt * 2.2);
     s.comboFlash = Math.max(0, s.comboFlash - dt * 1.8);
     if (s.closure && s.closure.t > 0) s.closure.t = Math.max(0, s.closure.t - dt * 1.35);
+    f.bladeContacts = f.bladeContacts.filter(function (c) { c.life -= dt; return c.life > 0; });
+    if (f.cannonShot && (f.cannonShot.age += dt) >= q.cannonAction.smokeTime) f.cannonShot = null;
+    f.cannonContacts = f.cannonContacts.filter(function (c) { c.life -= dt; return c.life > 0; });
     s.particles = s.particles.filter(function (x) {
       x.life -= dt; x.x += x.vx * dt; x.y += x.vy * dt; return x.life > 0;
     });
@@ -872,7 +1072,9 @@
     if (input.dash && p.dashCd <= 0 && p.dashTime <= 0) {
       var dx = ax, dy = ay;
       if (!ax && !ay) { dx = Math.cos(p.angle); dy = Math.sin(p.angle); }
-      p.dashX = dx; p.dashY = dy; p.dashTime = DASH_TIME; p.dashCd = 0.62;
+      p.dashX = dx; p.dashY = dy; p.dashTime = DASH_TIME;
+      /* 自由回廊的基础冷却是 0.62 秒，沿用疾步对经典 820ms 基值的缩放。 */
+      p.dashCd = 0.62 * (d.dashCd / 820);
       var dodge = CH.resolveDodge(s.chrono, true, s.perks);
       s.dodgeFlash = 1; A('dash');
       emit(s, 'perfectDodge', { kind: dodge ? dodge.kind : 'none',
@@ -881,6 +1083,7 @@
     if (p.dashTime > 0) {
       p.dashTime -= dt; p.vx = p.dashX * DASH_SPEED; p.vy = p.dashY * DASH_SPEED;
       s.trail.push({ x: p.x, y: p.y, life: 0.24, max: 0.24 });
+      applyDashPerks(s, dt);
     } else {
       var k = Math.min(1, dt * 13), sp = SPEED * tb.speed;
       p.vx += (ax * sp - p.vx) * k; p.vy += (ay * sp - p.vy) * k;
@@ -905,25 +1108,18 @@
       emit(s, 'freeReject', { reason: 'area', area: Math.round(closed.area) });
       FW.reset(f); FW.arm(f, p);
     }
-    /* 射击：子弹降级，吃地效与完美闪避 buff */
-    if (input.fire && p.fireCd <= 0) {
-      var homing = (s.perks.p_impact_homing || 0) > 0;
-      var bspeed = homing ? q.mod.homingSpeed : BULLET_SPEED;
-      var dmg = Math.round(BULLET_DMG * q.bulletMul * tb.damage * CH.buffDamage(s.chrono));
-      s.bullets.push({ x: p.x + Math.cos(p.angle) * 14, y: p.y + Math.sin(p.angle) * 14,
-        vx: Math.cos(p.angle) * bspeed, vy: Math.sin(p.angle) * bspeed,
-        damage: dmg, life: homing ? q.mod.homingLife : 0.55, r: 4, color: '#E9A23B',
-        homing: homing });
-      p.fireCd = FIRE_CD * tb.cd * (1 - CH.buffCd(s.chrono));
-      A('shoot');
-    }
+    advanceFreeBlade(s, dt);
+    if ((input.fire || input.attackPressed || f.bladeBuffer > 0) && p.fireCd <= 0 &&
+        (!f.swing || f.swing.progress === 1)) attackFree(s);
+    f.bladeBuffer = Math.max(0, f.bladeBuffer - dt);
     s.bullets = s.bullets.filter(function (b) {
       b.life -= wdt;
+      var hitList = b.hit || (b.hit = []);
       if (b.homing) {
         /* ⑧ 导引：子弹不再是直线射线，而是会朝最近敌人转向的投射物实体。 */
         var best = null, bd = Infinity;
         s.enemies.forEach(function (e) {
-          if (e.dead) return;
+          if (e.dead || hitList.indexOf(e) !== -1) return;
           var dd = Math.hypot(e.x - b.x, e.y - b.y);
           if (dd < bd) { bd = dd; best = e; }
         });
@@ -941,9 +1137,13 @@
       if (b.life <= 0) return false;
       for (var i = 0; i < s.enemies.length; i++) {
         var e = s.enemies[i];
-        if (!e.dead && dist(b, e) < e.r + b.r) {
-          if (e.patrol && e.guardOpen <= 0) { e.shieldFlash = 0.12; return false; }
-          damageEnemy(s, e, b.damage, false, 1); freeCombo(s, 1); freeCancel(s);
+        if (!e.dead && hitList.indexOf(e) === -1 && dist(b, e) < e.r + b.r) {
+          var landed = hitFreeEnemy(s, e, b.damage, b.crit, b.volley || (b.volley = { recovered: false }));
+          cannonContact(s, b, e, landed);
+          if (!landed) return false;
+          if (!e.dead && b.suppress < 1) e.cannonSlow = { factor: b.suppress, life: q.weaponPerks.cannonSuppressTime };
+          hitList.push(e);
+          if (b.pierce > 0) { b.pierce--; continue; }
           return false;
         }
       }
@@ -953,7 +1153,17 @@
     s.enemies.forEach(function (e) {
       if (e.dead) return;
       e.flash = Math.max(0, (e.flash || 0) - wdt);
-      if (e.patrol) { e.x += Math.sin(s.elapsed * 0.8) * 34 * wdt; return; }
+      e.dashCd = Math.max(0, (e.dashCd || 0) - wdt);
+      e.satCd = Math.max(0, (e.satCd || 0) - wdt);
+      e.slowTime = Math.max(0, (e.slowTime || 0) - wdt);
+      if (e.cannonSlow && (e.cannonSlow.life -= wdt) <= 0) e.cannonSlow = null;
+      if (e.bladeRecoil && (e.bladeRecoil.life -= dt) <= 0) e.bladeRecoil = null;
+      var speedFactor = (e.freeSpeed || 1) * enemySpeedFactor(d, p, e);
+      if (e.patrol) {
+        e.x += Math.sin(s.elapsed * 0.8) * 34 * wdt * speedFactor;
+        if (dist(e, p) < e.r + p.r) hurtPlayer(s, e, e.damage);
+        return;
+      }
       var target = CH.shadow(s.chrono, s.elapsed, false) || p;
       var tx = target.x - e.x, ty = target.y - e.y, len = Math.hypot(tx, ty) || 1;
       var nx = tx / len, ny = ty / len;
@@ -971,10 +1181,13 @@
         var want = 200, pull = len > want + 30 ? 1 : (len < want - 30 ? -1 : 0);
         e.vx = nx * 80 * pull; e.vy = ny * 80 * pull;
       } else { e.vx = nx * 100; e.vy = ny * 100; }
-      e.x += e.vx * wdt; e.y += e.vy * wdt;
+      pullTowardPlayer(d, p, e, 100);
+      e.x += e.vx * wdt * speedFactor; e.y += e.vy * wdt * speedFactor;
       collideWalls(e, e.r);
       if (dist(e, p) < e.r + p.r) hurtPlayer(s, e, e.damage);
     });
+    if (s.phase === 'dead') return s;
+    updateSatellites(s, wdt, d);
     /* 回扫波：沿玩家路径逆向推进，只打圈内的敌人 */
     if (f.wave) {
       var info = FW.advanceWave(f.wave, wdt);
@@ -985,18 +1198,19 @@
         if (e.dead || f.wave.hit[e.freeId]) return;
         if (!FW.inside(poly, e) && (!reach || FW.distanceToPoly(poly, e) > reach)) return;
         f.wave.hit[e.freeId] = true;
-        if (e.patrol && e.guardOpen <= 0) { e.shieldFlash = 0.12; return; }
-        damageEnemy(s, e, Math.round(f.wave.damage * tb.damage * CH.buffDamage(s.chrono)), true, 1);
-        freeCombo(s, 1); freeCancel(s); CH.stall(s.chrono);
+        if (hitFreeEnemy(s, e, Math.round(f.wave.damage * tb.damage * CH.buffDamage(s.chrono)), true)) CH.stall(s.chrono);
       });
       if (info && info.done) f.wave = null;
     }
     if (f.boss) updateFreeShield(s, dt);
     s.enemies = s.enemies.filter(function (e) { return !e.dead; });
     if (s.phase === 'playing' && !s.enemies.length) {
+      var hpBefore = p.hp;
+      C.core.perks.on(s, 'roomClear', {});
+      if (p.hp > hpBefore) emit(s, 'roomClear', { free: true, healed: p.hp - hpBefore });
       s.phase = 'perk'; s.perkPending = FW.offer(s);
       A('clear'); FW.save(s);
-      emit(s, 'perkOffer', { choices: s.perkPending, nextIsBoss: false, free: true, loop: true });
+      emit(s, 'perkOffer', { choices: s.perkPending, nextIsBoss: f.roomInLayer + 1 >= q.roomsPerLayer, free: true, loop: true });
     } else if (s.phase === 'boss' && !s.enemies.length) {
       if (f.layer >= q.layers) { FW.clearSave(); finishRun(s, true); }
       else {
@@ -1073,6 +1287,7 @@
       perk_pool: C.core.perks.IDS.slice()
     };
     var res = await C.gen.buildRun(input);
+    loadMeta();
     state = createState(res.run, meta.unlocked);
     state.source = res.source;
     state.templateIndex = res.templateIndex;
@@ -1086,7 +1301,7 @@
   }
 
   /* ---------- 伤害 ---------- */
-  function damageEnemy(s, e, dmg, crit, chainDepth) {
+  function damageEnemy(s, e, dmg, crit, chainDepth, localFeedback) {
     if (e.patrol && e.guardOpen <= 0) {
       e.shieldFlash = 0.12;
       return false;
@@ -1095,7 +1310,7 @@
     /* 一簇弹体各自结算伤害，同一敌人的密集命中合并成一次反馈。 */
     var pop = e.hitPop;
     var merge = pop && s.elapsed - pop.at < 0.09;
-    if (crit && (!merge || !pop.crit)) {
+    if (!localFeedback && crit && (!merge || !pop.crit)) {
       s.hitstop = Math.max(s.hitstop, 0.02);
       s.shake = Math.max(s.shake, 4);
     }
@@ -1105,7 +1320,7 @@
     } else {
       e.flash = crit ? 0.10 : 0.07;
       burst(s, e.x, e.y, crit ? '#E9A23B' : e.color, crit ? 6 : 3, 150);
-      if (s.lastHitSound == null || s.elapsed - s.lastHitSound >= 0.09) {
+      if (!localFeedback && (s.lastHitSound == null || s.elapsed - s.lastHitSound >= 0.09)) {
         A('hit');
         s.lastHitSound = s.elapsed;
       }
@@ -1138,8 +1353,10 @@
       burst(s, e.x, e.y, e.color, 16, 260);
       A('kill');
       /* B3：击杀属重事件，给一次短定格（封顶），普通命中不触发 */
-      s.hitstop = Math.min(s.hitstop + 0.03, 0.06);
-      s.shake = Math.max(s.shake, 6);
+      if (!localFeedback) {
+        s.hitstop = Math.min(s.hitstop + 0.03, 0.06);
+        s.shake = Math.max(s.shake, 6);
+      }
       var payload = C.core.perks.on(s, 'kill', { chainChance: 0, x: e.x, y: e.y });
       if (!chainDepth) {
         /* 连锁：概率/范围/伤害全由 perks 提供；缺省回退 v1 的 130 / 8 */
@@ -1148,7 +1365,7 @@
           var cd = payload.chainDamage || 8;
           var nextDepth = payload.chainInfinite ? 0 : 1;
           s.enemies.forEach(function (o) {
-            if (o !== e && !o.dead && dist(o, e) < cr) damageEnemy(s, o, cd, false, nextDepth);
+            if (o !== e && !o.dead && dist(o, e) < cr) damageEnemy(s, o, cd, false, nextDepth, localFeedback);
           });
           burst(s, e.x, e.y, '#8E7CE8', 12, 220);
         }
@@ -1156,12 +1373,12 @@
         if (payload.explodeDamage > 0) {
           var er = payload.fullscreenNova ? W * 2 : (payload.explodeRadius || 70);
           s.enemies.forEach(function (o) {
-            if (o !== e && !o.dead && dist(o, e) < er) damageEnemy(s, o, payload.explodeDamage, false, 1);
+            if (o !== e && !o.dead && dist(o, e) < er) damageEnemy(s, o, payload.explodeDamage, false, 1, localFeedback);
           });
           burst(s, e.x, e.y, '#E9A23B', payload.fullscreenNova ? 40 : 14, 260);
         }
       }
-      if (e.isBoss) s.shake = 16;
+      if (e.isBoss && !localFeedback) s.shake = 16;
     }
     return true;
   }
@@ -1169,7 +1386,9 @@
   function hurtPlayer(s, source, baseDamage) {
     var p = s.player;
     if (p.invuln > 0 || p.dashTime > 0 || s.phase === 'dead' || s.phase === 'won') return;
-    var payload = C.core.perks.on(s, 'hurt', { damage: baseDamage, source: source, shielded: false, reflected: 0 });
+    var protectedSource = s.free && source && source.patrol && source.guardOpen <= 0;
+    var payload = C.core.perks.on(s, 'hurt', { damage: baseDamage, source: protectedSource ? null : source,
+      shielded: false, reflected: 0 });
     p.hp -= payload.damage;
     p.invuln = HURT_INVULN;
     /* 长局：被打断就失去「连续闭环」蓄势，绕圈节奏本身成为一种风险收益。 */
@@ -1207,10 +1426,11 @@
       });
       return;
     }
+    loadMeta();
     if (s.free) {
       A(cleared ? 'clear' : 'death');
       C.core.freewave.clearSave();
-      var fEarned = Math.floor(s.gold / 2) + (cleared ? 60 : 0);
+      var fEarned = C.core.perks.on(s, 'runEnd', { gold: Math.floor(s.gold / 2) + (cleared ? 60 : 0) }).gold;
       meta.gold += fEarned;
       if (cleared) meta.clears += 1;
       saveMeta();
@@ -1264,6 +1484,70 @@
     });
   }
 
+  function applyHitPerks(s, e) {
+    var hk = C.core.perks.on(s, 'hit', { x: e.x, y: e.y });
+    if (hk.lifesteal) s.player.hp = Math.min(s.player.maxHp, s.player.hp + hk.lifesteal);
+    if (hk.frost) { e.slowTime = hk.frost.time; e.slowFactor = hk.frost.factor; }
+  }
+
+  function applyDashPerks(s, dt) {
+    var p = s.player, dd = C.core.perks.on(s, 'dash', {});
+    if (dd.dashDamage > 0) {
+      s.enemies.forEach(function (e) {
+        if (!e.dead && (e.dashCd || 0) <= 0 && dist(e, p) < e.r + p.r + 6) {
+          e.dashCd = B.dashHitCd;
+          damageEnemy(s, e, dd.dashDamage, false, 1);
+        }
+      });
+    }
+    if (dd.dashTrail) {
+      s.dashTrailCd = (s.dashTrailCd || 0) - dt;
+      if (s.dashTrailCd <= 0) {
+        s.dashTrailCd = B.dashTrailCd;
+        var damage = Math.round((dd.explodeDamage || 8) * B.dashTrailMul);
+        s.enemies.forEach(function (e) {
+          if (!e.dead && dist(e, p) < (dd.explodeRadius || 70)) damageEnemy(s, e, damage, false, 1);
+        });
+        burst(s, p.x, p.y, '#E9A23B', 8, 180);
+      }
+    }
+  }
+
+  function enemySpeedFactor(d, p, e) {
+    var factor = d.enemySpeed;
+    if (d.slowAuraRadius > 0 && dist(e, p) < d.slowAuraRadius) factor *= d.slowAuraFactor;
+    var onHitSlow = e.slowTime > 0 ? (e.slowFactor || 1) : 1;
+    if (e.cannonSlow) onHitSlow = Math.min(onHitSlow, e.cannonSlow.factor);
+    return factor * onHitSlow;
+  }
+
+  function pullTowardPlayer(d, p, e, speed) {
+    if (!d.synergy.vortexPull || d.satellites <= 0) return;
+    var len = dist(e, p);
+    if (len > 0 && len < d.satelliteRadius * 2) {
+      e.vx += (p.x - e.x) / len * speed;
+      e.vy += (p.y - e.y) / len * speed;
+    }
+  }
+
+  function updateSatellites(s, dt, d) {
+    var p = s.player;
+    if (d.satellites <= 0) { s.satellites.length = 0; return; }
+    s.satAngle += dt * d.satelliteSpeed;
+    s.satellites.length = d.satellites;
+    for (var i = 0; i < d.satellites; i++) {
+      var angle = s.satAngle + i * (Math.PI * 2 / d.satellites);
+      var sat = { x: p.x + Math.cos(angle) * d.satelliteRadius, y: p.y + Math.sin(angle) * d.satelliteRadius };
+      s.satellites[i] = sat;
+      s.enemies.forEach(function (e) {
+        if (!e.dead && (e.satCd || 0) <= 0 && dist(sat, e) < e.r + 8) {
+          e.satCd = B.satHitCd;
+          damageEnemy(s, e, d.satelliteDmg, false, 1);
+        }
+      });
+    }
+  }
+
   function restart(opts) { return startRun(opts); }
 
   /* ---------- 词条选择 ---------- */
@@ -1305,9 +1589,8 @@
     }
     if (s.free) {
       if (!s.perkPending || s.perkPending.indexOf(id) === -1) return false;
-      /* 主模式候选含 IMPACT 池的两项武器改装，定义仍留在各自独立池。 */
-      var fdef = C.core.perks.LOOP[id] || C.core.perks.IMPACT[id];
-      if (!fdef || (s.perks[id] || 0) >= (fdef.max || 2)) return false;
+      var fdef = C.core.freewave.stylePerk(s, id);
+      if (!fdef || (s.perks[id] || 0) >= fdef.max) return false;
       s.perks[id] = (s.perks[id] || 0) + 1;
       s.pickCount = (s.pickCount || 0) + 1;
       A('pick');
@@ -1542,28 +1825,7 @@
       p.vx = p.dashX * DASH_SPEED;
       p.vy = p.dashY * DASH_SPEED;
       s.trail.push({ x: p.x, y: p.y, life: 0.24, max: 0.24 });
-      /* T24-B 掠影冲刺伤害 + 协同「疾步 + 爆裂」冲刺爆炸轨迹 */
-      var dd = C.core.perks.on(s, 'dash', {});
-      if (dd.dashDamage > 0) {
-        s.enemies.forEach(function (e) {
-          e.dashCd = e.dashCd || 0;
-          if (!e.dead && e.dashCd <= 0 && dist(e, p) < e.r + p.r + 6) {
-            e.dashCd = B.dashHitCd;
-            damageEnemy(s, e, dd.dashDamage, false, 1);
-          }
-        });
-      }
-      if (dd.dashTrail) {
-        s.dashTrailCd = (s.dashTrailCd || 0) - dt;
-        if (s.dashTrailCd <= 0) {
-          s.dashTrailCd = B.dashTrailCd;
-          var tr = Math.round((dd.explodeDamage || 8) * B.dashTrailMul);
-          s.enemies.forEach(function (o) {
-            if (!o.dead && dist(o, p) < (dd.explodeRadius || 70)) damageEnemy(s, o, tr, false, 1);
-          });
-          burst(s, p.x, p.y, '#E9A23B', 8, 180);
-        }
-      }
+      applyDashPerks(s, dt);
     } else {
       var k = Math.min(1, dt * 13);
       p.vx += (ax * SPEED - p.vx) * k;
@@ -1637,10 +1899,7 @@
           /* C5 连击：仅玩家子弹命中累积，刷新 1.5s 窗口 */
           s.combo = (s.combo || 0) + 1;
           s.comboTimer = B.comboWindow;
-          /* T24-B 吸血 / 霜击钩子 */
-          var hk = C.core.perks.on(s, 'hit', { x: e.x, y: e.y });
-          if (hk.lifesteal) s.player.hp = Math.min(s.player.maxHp, s.player.hp + hk.lifesteal);
-          if (hk.frost) { e.slowTime = hk.frost.time; e.slowFactor = hk.frost.factor; }
+          applyHitPerks(s, e);
           hitList.push(e);
           /* 贯穿：仍有穿透次数则继续飞（可同帧命中后续敌人），否则子弹消失 */
           if (b.pierce > 0) { b.pierce -= 1; continue; }
@@ -1651,7 +1910,6 @@
     });
 
     /* 敌人 AI */
-    var speedMul = d.enemySpeed;
     var inBossP2 = (s.bossPhase || 1) === 2;
     s.enemies.forEach(function (e) {
       if (e.dead) return;
@@ -1664,10 +1922,7 @@
       var toX = p.x - e.x, toY = p.y - e.y;
       var len = Math.hypot(toX, toY) || 1;
       var nx = toX / len, ny = toY / len;
-      var sp = (e.isBoss ? 96 : 118) * speedMul;
-      /* T24-B 寒域光环 / 霜击 / Boss P2 提速 */
-      if (d.slowAuraRadius > 0 && dist(e, p) < d.slowAuraRadius) sp *= d.slowAuraFactor;
-      if (e.slowTime > 0) sp *= (e.slowFactor || 1);
+      var sp = (e.isBoss ? 96 : 118) * enemySpeedFactor(d, p, e);
       if (e.isBoss && inBossP2) sp *= B.bossPhase2Speed;
 
       if (e.pattern === 'chase') {
@@ -1742,10 +1997,7 @@
         }
       }
 
-      /* T24-B 协同「卫轮 + 寒域 / 涡心」：卫星范围内敌人被向心吸附 */
-      if (d.synergy.vortexPull && d.satellites > 0 && len < d.satelliteRadius * 2) {
-        e.vx += nx * sp; e.vy += ny * sp;
-      }
+      pullTowardPlayer(d, p, e, sp);
       e.x += e.vx * dt; e.y += e.vy * dt;
       collideWalls(e, e.r);
       if (dist(e, p) < e.r + p.r && e.touchCd <= 0) {
@@ -1776,27 +2028,7 @@
       });
     }
 
-    /* T24-B 环绕卫星：位置写入 state.satellites（视觉层可选读取），撞击造成伤害 */
-    if (d.satellites > 0) {
-      s.satAngle = (s.satAngle || 0) + dt * d.satelliteSpeed;
-      var sats = s.satellites || (s.satellites = []);
-      sats.length = d.satellites;
-      for (var k = 0; k < d.satellites; k++) {
-        var sang = s.satAngle + k * (Math.PI * 2 / d.satellites);
-        var sx = p.x + Math.cos(sang) * d.satelliteRadius;
-        var sy = p.y + Math.sin(sang) * d.satelliteRadius;
-        sats[k] = { x: sx, y: sy };
-        s.enemies.forEach(function (e) {
-          e.satCd = e.satCd || 0;
-          if (!e.dead && e.satCd <= 0 && dist({ x: sx, y: sy }, e) < e.r + 8) {
-            e.satCd = B.satHitCd;
-            damageEnemy(s, e, d.satelliteDmg, false, 1);
-          }
-        });
-      }
-    } else if (s.satellites) {
-      s.satellites = [];
-    }
+    updateSatellites(s, dt, d);
 
     /* 敌方子弹 */
     s.enemyBullets = s.enemyBullets.filter(function (b) {
@@ -1850,10 +2082,10 @@
   C.core = C.core || {};
   C.core.engine = {
     W: W, H: H, EXIT_R: EXIT_R,
-    startRun: startRun, restart: restart, update: update,
+    startRun: startRun, restart: restart, update: update, switchFreeWeapon: switchFreeWeapon,
     choosePerk: choosePerk, offerPerks: offerPerks,
     getState: getState, getMeta: getMeta, getLastRun: getLastRun,
-    loadMeta: loadMeta, unlock: unlock, setOnEvent: setOnEvent,
+    loadMeta: loadMeta, unlock: unlock, resetUnlocks: resetUnlocks, UNLOCK_COST: UNLOCK_COST, setOnEvent: setOnEvent,
     uuid: uuid
   };
 })(window.Corridor = window.Corridor || {});
