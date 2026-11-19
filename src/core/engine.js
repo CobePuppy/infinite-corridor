@@ -592,6 +592,7 @@
     state.source = 'loop';
     state.onEvent = opts.onEvent || null;
     state.breakFlash = 0;                 /* M9：全屏破盾爆发信号，render 只读 */
+    state.closure = null;                 /* M10：闭环兑现演出，render 只读 */
     state.loop = {
       plan: LM.plan(seed),
       layer: saved ? saved.layer : 1,
@@ -885,7 +886,19 @@
     L.goldPerKill = rw.goldPerKill;
     A('recall');
     s.shake = Math.max(s.shake, 4);
+    /* M10：把这一圈的兑现结果算成可渲染数据。此前只有空壳 loopClosed，
+     * 圈型 / 长度 / 连扫倍率 / 下圈回扫伤害全不可读，闭环瞬间也没有画面演出。
+     * waveRules(s) 用更新后的 streak，因此 damage 与 nextMul 都指「下一圈」。 */
+    var LM = C.core.loop;
+    var rep = LM.closureReport(s.recall && s.recall.wave,
+      s.recall && s.recall.layout, L.streak, LM.waveRules(s));
+    s.closure = { t: 1, report: rep, loops: s.recall.loops };
     emit(s, 'loopClosed', { loops: s.recall.loops, streak: L.streak, heal: rw.heal });
+    emit(s, 'loopClosure', {
+      loops: s.recall.loops, tag: rep.tag, label: rep.label, length: rep.length,
+      lanes: rep.lanes, corner: rep.corner, streak: rep.streak,
+      nextMul: rep.nextMul, damage: rep.damage
+    });
   }
 
   /* ---------- M9：巡廊首领多相位护盾 ----------
@@ -998,6 +1011,7 @@
     s.shake = Math.max(0, s.shake - dt * 42);
     s.transition = Math.max(0, s.transition - dt);
     if (s.breakFlash > 0) s.breakFlash = Math.max(0, s.breakFlash - dt * 1.7);
+    if (s.closure && s.closure.t > 0) s.closure.t = Math.max(0, s.closure.t - dt * 1.35);
 
     s.particles = s.particles.filter(function (p) {
       p.life -= dt; p.x += p.vx * dt; p.y += p.vy * dt;

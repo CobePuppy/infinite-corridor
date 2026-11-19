@@ -1182,6 +1182,46 @@
     ctx.restore();
   }
 
+  /* M10：闭环兑现瞬间的战场演出。与 M9 破盾爆发刻意区分：破盾是全屏琥珀爆发，
+   * 兑现是沿「这一圈走过的两条廊」收束的光带 + 玩家脚下扩散环 + 读数，
+   * 克制但一眼能读出圈型、长度、连扫层数。此前 onLoopClosed 只发空壳事件，
+   * 闭环这一下在画面上完全没有反馈，是「不够爽」最直接的一处缺口。 */
+  function drawClosure(ctx, s, t) {
+    var c = s && s.closure;
+    if (!c || !(c.t > 0) || !s.player) return;
+    var col = CUR.col, f = clamp(c.t, 0, 1), k = 1 - f;
+    var rep = c.report, p = s.player, color = waveColor(s);
+    ctx.save();
+    var lanes = s.recall && s.recall.layout && s.recall.layout.lanes;
+    if (lanes && rep.lanes.length) {
+      ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+      rep.lanes.forEach(function (id) {
+        var lane = lanes[id];
+        if (!lane) return;
+        tracePath(ctx, lane.points); ctx.lineWidth = 6 + 10 * f;
+        ctx.strokeStyle = rgba(color, 0.16 * f); ctx.stroke();
+        tracePath(ctx, lane.points); ctx.lineWidth = 1.6;
+        ctx.strokeStyle = rgba(color, 0.55 * f); ctx.stroke();
+      });
+    }
+    for (var r = 0; r < 2; r++) {
+      ctx.strokeStyle = rgba(color, (0.5 - r * 0.2) * f);
+      ctx.lineWidth = (3 - r) * (0.7 + f);
+      ctx.beginPath(); ctx.arc(p.x, p.y, 16 + k * (52 + r * 30), 0, Math.PI * 2); ctx.stroke();
+    }
+    ctx.globalAlpha = clamp(f * 1.6, 0, 1);
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    var bx = clamp(p.x, 150, W - 150), by = clamp(p.y - 58 - k * 14, 44, H - 44);
+    ctx.font = '700 20px "Microsoft YaHei", system-ui, sans-serif';
+    ctx.lineWidth = 4; ctx.strokeStyle = rgba(col.outline, 0.9);
+    ctx.strokeText('闭环兑现', bx, by);
+    ctx.fillStyle = color; ctx.fillText('闭环兑现', bx, by);
+    ctx.font = '500 10px ui-monospace, Consolas, monospace';
+    ctx.fillStyle = col.amber;
+    ctx.fillText('LOOP CLOSED / ' + rep.label + ' / ' + rep.length + ' / STREAK x' + rep.streak, bx, by + 19);
+    ctx.restore();
+  }
+
   /* ---------- 后处理：VISUALS.postFx 真正接线 ---------- */
   function drawPostFx(ctx, s, t) {
     if (CUR.paper) return;
@@ -1312,6 +1352,7 @@
     }
 
     drawDamagePops(ctx, s);
+    if (s.loop) drawClosure(ctx, s, t);
     if (s.loop) drawBreakBurst(ctx, s, t);
     if (s.bossPhase === 2) drawBossPhase(ctx, s, t);
     drawPostFx(ctx, s, t);

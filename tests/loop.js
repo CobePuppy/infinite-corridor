@@ -708,3 +708,144 @@ test('§F7 事件、HUD DOM 与 CSS 接线静态契约', function () {
   var renderSrc = fs.readFileSync(path.join(ROOT, 'src/ui/render.js'), 'utf8');
   assert.ok(renderSrc.indexOf('drawBossShield') !== -1 && renderSrc.indexOf('drawBreakBurst') !== -1);
 });
+
+/* ============ §G M10 闭环兑现演出与连扫蓄势可读化 ============ */
+
+test('§G1 closureReport 从客观几何读圈型 / 倍率，且空波不误判', function () {
+  var flat = LM.makeLayout(0, 0), bent = LM.makeLayout(1, 0);
+  var rules = LM.waveRules({ perks: {}, loop: { streak: 1 } });
+  var shortRep = LM.closureReport({ length: 1724, routes: ['upper', 'middle'] }, flat, 1, rules);
+  assert.equal(shortRep.tag, 'short');
+  assert.equal(shortRep.label, '短圈');
+  assert.equal(shortRep.length, 1724);
+  assert.deepEqual(shortRep.lanes, ['upper', 'middle']);
+  assert.equal(shortRep.streak, 1);
+  assert.equal(shortRep.nextMul, 1);
+  assert.equal(shortRep.damage, rules.damage);
+
+  var longRep = LM.closureReport({ length: 1952, routes: ['lower', 'middle'] }, flat, 3, rules);
+  assert.equal(longRep.tag, 'long');
+  assert.ok(longRep.label.indexOf('长圈') !== -1);
+  assert.equal(longRep.nextMul, 1 + B.streakStep * 2);
+
+  var cornerRep = LM.closureReport({ length: 1876, routes: ['upper', 'middle'] }, bent, 2, rules);
+  assert.equal(cornerRep.corner, true, '折上廊应识别为折角圈');
+  assert.ok(cornerRep.label.indexOf('折角') !== -1);
+
+  var capped = LM.closureReport({ length: 1800, routes: ['middle'] }, flat, 99, rules);
+  assert.equal(capped.streak, B.streakCap, '连扫层数应封顶');
+  assert.equal(capped.tag, 'mid');
+
+  var empty = LM.closureReport(null, flat, 1, rules);
+  assert.equal(empty.tag, 'any');
+  assert.equal(empty.label, '闭环', '无波时不能把 0 长度误判成短圈');
+  assert.equal(empty.corner, false);
+});
+
+test('§G2 真实帧闭环写入 s.closure 并逐帧衰减到零', async function () {
+  var s = await beginLoop();
+  steady(s);
+  assert.equal(s.closure, null, '开局不应残留兑现演出');
+  lap(s, 'upper', 'middle');
+  assert.ok(s.closure && s.closure.t > 0, '闭环应写入兑现状态');
+  var rep = s.closure.report;
+  assert.ok(rep.length > 1000, '报告应含真实闭环长度，不是占位值');
+  assert.ok(rep.lanes.length >= 2, '报告应含去程与回程两条廊');
+  assert.equal(rep.streak, 1);
+  assert.equal(s.loop.streak, 1);
+  assert.equal(s.closure.loops, s.recall.loops);
+  var t0 = s.closure.t;
+  for (var i = 0; i < 20; i++) tick();
+  assert.ok(s.closure.t < t0, '兑现演出应随帧衰减');
+  for (var j = 0; j < 80; j++) tick();
+  assert.equal(s.closure.t, 0, '演出应在约 0.74 秒后结束，不残留');
+  reset();
+});
+
+test('§G3 loopClosure 载荷与报告一致，旧 loopClosed 参数零回归', async function () {
+  var events = [];
+  var s = await beginLoop({ onEvent: function (t, p) { events.push({ type: t, p: p }); } });
+  steady(s);
+  lap(s, 'upper', 'middle');
+  var closure = events.filter(function (e) { return e.type === 'loopClosure'; }).pop();
+  var old = events.filter(function (e) { return e.type === 'loopClosed'; }).pop();
+  assert.ok(closure, '应发出 loopClosure');
+  assert.ok(old, '旧 loopClosed 仍应发出');
+  assert.equal(closure.p.label, s.closure.report.label);
+  assert.equal(closure.p.length, s.closure.report.length);
+  assert.equal(closure.p.streak, s.loop.streak);
+  assert.equal(closure.p.damage, s.closure.report.damage);
+  assert.equal(closure.p.loops, s.recall.loops);
+  assert.deepEqual(closure.p.lanes, s.closure.report.lanes);
+  assert.equal(old.p.loops, s.recall.loops);
+  assert.equal(old.p.streak, s.loop.streak);
+  assert.ok('heal' in old.p, '旧事件字段不得被削掉');
+  reset();
+});
+
+test('§G4 HUD 连扫条按 ×1 / ×2 / ×3 三态显示倍率与窗口剩余', async function () {
+  var s = await beginLoop();
+  var bar = els['streak-bar'], fill = els['streak-fill'];
+  var st = els['streak-state'], tm = els['streak-timer'];
+  S.updateHud(s);
+  assert.equal(bar.dataset.level, '1');
+  assert.ok(st._text.indexOf('待蓄') !== -1);
+  assert.equal(fill.style.width, '0%');
+
+  s.loop.streak = 2; s.loop.streakTimer = B.streakWindow;
+  S.updateHud(s);
+  assert.equal(bar.dataset.level, '2');
+  assert.ok(st._text.indexOf('×2') !== -1);
+  assert.equal(fill.style.width, '100%');
+  assert.equal(tm._text, B.streakWindow.toFixed(1) + 's');
+
+  s.loop.streak = 3; s.loop.streakTimer = B.streakWindow / 2;
+  S.updateHud(s);
+  assert.equal(bar.dataset.level, '3');
+  assert.ok(st._text.indexOf('1.30') !== -1, '满档倍率应可读');
+  var pct = parseFloat(fill.style.width);
+  assert.ok(pct > 49 && pct < 51, '窗口进度应随剩余时间缩短');
+
+  s.phase = 'won';
+  S.updateHud(s);
+  assert.ok(bar.classList.contains('hidden'), '结算页应隐藏连扫条');
+  reset();
+});
+
+test('§G5 闭环兑现真实渲染不抛异常，且画面确实分流', async function () {
+  var s = await beginLoop();
+  steady(s);
+  lap(s, 'upper', 'middle');
+  assert.ok(s.closure && s.closure.t > 0);
+  var on = mockCtx();
+  assert.doesNotThrow(function () { C.ui.render.draw(on.ctx, s, 0.8, null, null); });
+  assert.ok(on.seen.length > 20, '应产生实际绘制色值');
+  var saved = s.closure;
+  s.closure = null;
+  var off = mockCtx();
+  assert.doesNotThrow(function () { C.ui.render.draw(off.ctx, s, 0.8, null, null); });
+  assert.notEqual(on.seen.join('|'), off.seen.join('|'), '兑现演出应叠加额外画面');
+  s.closure = saved;
+  reset();
+});
+
+test('§G6 规则 / 引擎 / HUD / CSS / 事件 / 渲染 六层静态接线契约', function () {
+  var h3 = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
+  ['streak-bar', 'streak-state', 'streak-fill', 'streak-timer'].forEach(function (id) {
+    assert.ok(h3.indexOf('id="' + id + '"') !== -1, id + ' 应存在于 HUD');
+  });
+  var css2 = fs.readFileSync(path.join(ROOT, 'src/ui/style.css'), 'utf8');
+  assert.ok(css2.indexOf('.streak-bar') !== -1 && css2.indexOf('[data-level="3"]') !== -1);
+  var main2 = fs.readFileSync(path.join(ROOT, 'src/ui/main.js'), 'utf8');
+  assert.ok(main2.indexOf("case 'loopClosure'") !== -1, '事件必须有人接，不能空转');
+  var eng = fs.readFileSync(path.join(ROOT, 'src/core/engine.js'), 'utf8');
+  assert.ok(eng.indexOf('s.closure.t = Math.max(0') !== -1, '兑现状态必须逐帧衰减');
+  assert.ok(eng.indexOf("emit(s, 'loopClosure'") !== -1);
+  var rnd = fs.readFileSync(path.join(ROOT, 'src/ui/render.js'), 'utf8');
+  assert.ok(rnd.indexOf('function drawClosure') !== -1);
+  assert.ok(rnd.indexOf('if (s.loop) drawClosure(ctx, s, t);') !== -1);
+  var lp = fs.readFileSync(path.join(ROOT, 'src/core/loop.js'), 'utf8');
+  assert.ok(lp.indexOf('closureReport: closureReport') !== -1);
+  var scr = fs.readFileSync(path.join(ROOT, 'src/ui/screens.js'), 'utf8');
+  assert.ok(scr.indexOf("'streak-bar'") !== -1);
+});

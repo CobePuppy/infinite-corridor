@@ -110,6 +110,25 @@ canvas { display: block; width: 100%; height: auto; aspect-ratio: 8 / 5; outline
 .shield-bar[data-state="reforming"] .shield-timer { color: var(--guide) }
 .shield-bar[data-state="reforming"] .shield-fill { background: var(--guide) }
 @keyframes shield-pulse { from { opacity: .62 } to { opacity: 1 } }
+/* M10：连扫蓄势条 —— 1 层雾青待蓄、2 层藕紫、3 层琥珀满档，与护盾条同骨架 */
+.streak-bar {
+  display: grid; grid-template-columns: minmax(0, 1fr) minmax(56px, 96px) auto;
+  align-items: center; gap: 8px; margin-top: 4px;
+  font-size: 10px; font-family: var(--mono); letter-spacing: .02em;
+}
+.streak-state { color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
+.streak-timer { color: var(--muted); min-width: 38px; text-align: right; font-variant-numeric: tabular-nums }
+.streak-track { height: 4px; background: #1E2F3B; border-radius: 2px; overflow: hidden }
+.streak-fill { height: 100%; width: 0; background: var(--guide); transition: width 90ms linear }
+.streak-bar[data-level="2"] .streak-state,
+.streak-bar[data-level="2"] .streak-timer { color: var(--rare) }
+.streak-bar[data-level="2"] .streak-fill { background: var(--rare) }
+.streak-bar[data-level="3"] .streak-state,
+.streak-bar[data-level="3"] .streak-timer { color: var(--accent); font-weight: 700 }
+.streak-bar[data-level="3"] .streak-fill { background: var(--accent) }
+.streak-bar[data-level="3"] .streak-track {
+  box-shadow: 0 0 0 1px var(--accent), 0 0 10px rgba(233,180,76,.35);
+}
 .battle-detail { flex-wrap: wrap; gap: 4px 12px; margin-top: 5px }
 .dash-status b { color: var(--accent) }
 .dash-status b.waiting { color: var(--muted) }
@@ -356,6 +375,8 @@ button:not(:disabled):hover, select:hover { border-color: var(--guide) }
   .hud { padding: 8px; grid-template-columns: minmax(100px, .82fr) minmax(0, 1.45fr); gap: 5px 10px }
   .shield-bar { grid-template-columns: minmax(0, 1fr) auto }
   .shield-track { display: none }
+  .streak-bar { grid-template-columns: minmax(0, 1fr) auto }
+  .streak-track { display: none }
   .hint { min-height: 2.8em }
   .hud-right { grid-column: 1 / -1; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap }
   .hud-stats, .hud-actions { gap: 5px }

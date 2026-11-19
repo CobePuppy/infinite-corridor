@@ -320,6 +320,29 @@
     return !!(tags && tags[required]);
   }
 
+  /* ---------- M10：闭环兑现报告 ----------
+   * 只消费 recall.js 已产出的波与 layout，不新增几何算法。此前 onLoopClosed()
+   * 只发一个空壳 loopClosed{loops,streak,heal}，玩家看不见「这一圈走出了什么」：
+   * 圈型、实际长度、走了哪两条廊、连扫倍率、下一圈回扫伤害全都不可读。
+   * 这里把兑现结果算成纯数据，engine 写入 s.closure 并 emit，Canvas / HUD 只负责画。 */
+  function closureReport(wave, layout, streak, rules) {
+    var B = C.core.perks.BALANCE.loop;
+    var tags = waveTags(wave, layout);
+    var n = clamp(streak || 1, 1, B.streakCap);
+    var tag = tags.short ? 'short' : tags.long ? 'long' : 'mid';
+    var label = tags.short ? '短圈' : tags.long ? '长圈' : '中圈';
+    if (tags.corner) label += ' · 折角';
+    if (!tags.length) { tag = 'any'; label = '闭环'; }   /* 无波时降级，不误判成短圈 */
+    var rs = rules || waveRules({ perks: {}, loop: { streak: n } });
+    return {
+      tag: tag, label: label,
+      length: Math.round(tags.length), lanes: tags.lanes.slice(),
+      corner: !!tags.corner,
+      streak: n, nextMul: 1 + B.streakStep * (n - 1),
+      damage: rs.damage
+    };
+  }
+
   /* ---------- 存档：每间房结算写一次快照，刷新可续玩 ---------- */
   function save(s) {
     if (!s || !s.loop) return null;
@@ -359,6 +382,7 @@
     plan: plan, roomAt: roomAt,
     waveRules: waveRules, offer: offer, loopRewards: loopRewards,
     SHIELD_LABEL: SHIELD_LABEL, shieldSpec: shieldSpec, waveTags: waveTags, matchesShield: matchesShield,
+    closureReport: closureReport,
     save: save, load: load, hasSave: hasSave, clearSave: clearSave, saveLabel: saveLabel
   };
 })(window.Corridor = window.Corridor || {});

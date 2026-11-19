@@ -426,6 +426,22 @@
       }
     } else sb.classList.add('hidden');
 
+    /* M10：连扫蓄势条。此前只有 hint 里一句「连扫 ×N」，玩家看不到
+     * 26 秒窗口还剩多久、倍率到底是多少，连续闭环的收益不可读。 */
+    var tb = $('streak-bar');
+    if (s.loop && s.phase !== 'won' && s.phase !== 'dead') {
+      var L2 = s.loop, SW = C.core.perks.BALANCE.loop;
+      var lv = Math.max(1, L2.streak || 0);
+      tb.classList.remove('hidden');
+      tb.dataset.level = String(lv);
+      $('streak-state').textContent = lv > 1
+        ? ('连扫 ×' + lv + ' · 回扫 ' + (1 + SW.streakStep * (lv - 1)).toFixed(2) + '×')
+        : '连扫待蓄 · 连续闭环可叠加';
+      $('streak-fill').style.width = (lv > 1
+        ? Math.min(100, (L2.streakTimer || 0) / SW.streakWindow * 100) : 0) + '%';
+      $('streak-timer').textContent = lv > 1 ? (L2.streakTimer || 0).toFixed(1) + 's' : '';
+    } else tb.classList.add('hidden');
+
     var hint = s.room.path_hint || '';
     if (s.phase === 'won' || s.phase === 'dead') hint = '';
     else if (impact) {

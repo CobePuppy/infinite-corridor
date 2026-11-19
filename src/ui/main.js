@@ -112,6 +112,8 @@
     } catch (e) { /* payload 形态未知时不影响主流程 */ }
   }
 
+  var lastClosureToast = 0;
+
   function onEvent(type, p) {
     switch (type) {
       case 'runStart':
@@ -127,6 +129,19 @@
       case 'loopClosed':
         if (p.streak > 1) screens.toast('连扫 ×' + p.streak + (p.heal ? ' · 归廊 +' + p.heal + ' 生命' : ''), 1500);
         break;
+      /* M10：闭环兑现反馈。首领房有 M9 的五个护盾 toast，这里主动让位避免刷屏；
+       * 普通房按 1.5 秒节流播报圈型 / 长度 / 连扫倍率 / 下圈回扫伤害。 */
+      case 'loopClosure': {
+        var lst = C.core.engine.getState();
+        var shielded = lst && lst.enemies && lst.enemies.some(function (e) { return e.shield && !e.dead; });
+        var now = Date.now();
+        if (!shielded && now - lastClosureToast > 1500) {
+          lastClosureToast = now;
+          screens.toast('闭环兑现 · ' + p.label + ' ' + (p.length / 1000).toFixed(1) +
+            'k · 连扫 ×' + p.streak + ' · 下圈回扫 ' + p.damage, 1500);
+        }
+        break;
+      }
       case 'loopLayer':
         screens.toast('第 ' + p.layer + ' 层 · 进度已保存，可随时退出续玩', 3200);
         break;
