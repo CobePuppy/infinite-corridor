@@ -40,11 +40,21 @@
   连扫蓄势、射击退为牵制、层末存档续玩），并接线首页 / HUD / 词条页 / 渲染 / 主循环。
   新增 `tests/loop.js` **16/16**，八套基线全绿；验证全程纯 Node + DOM stub，
   **零端口、零后台进程、零浏览器操作**。详见文末「附录：回廊长局本体改造验收」。
+- **2026-11-19 M8 整体美术风格大改（开发总监）**：用户选定「整体美术风格都需要大改」，
+  本轮直接改渲染层与界面，不产出 Plan / 验收包。诊断出 `VISUALS` 里 `bgStyle` / `postFx`
+  等参数**从未接进渲染**，四套主题实际只差网格间距；CSS 是「荧光绿控制台」、Canvas 是
+  「夜光制图」、另有米黄套印版，三套语言打架。本轮统一为「深蓝测绘图」：
+  `src/theme/index.js` 色板/材质层、`src/ui/render.js` 与 `src/ui/style.css` 全量重写，
+  四套主题真正换材质与后处理，界面经 `#app[data-theme]` 同步换色。
+  八套基线全绿 + 工作区一次性渲染探针 **13 场景 PASS**（四主题首页最小差异 78 个色值、
+  长局 121），验证全程纯 Node / DOM stub，**零端口、零后台进程、零浏览器操作**。
+  详见文末「附录：M8 整体美术风格大改验收」。
 - 「当前依据」只记录当前代码快照下自动化测试的客观结果，供总监复跑时比对，**不替代验收结论**。
 - 相关资产：`tests/smoke.js`（M1 基线，20/20，禁止改动）、`tests/m2m3.js`（M4 验收资产）、
   `tests/fullsuite.js`（M5 跨层接线 + 节奏量化 + 2026-11-18 §A7 B 板块回归 + 队友 B1 固定用例）、
   `tests/recall.js` / `tests/impact.js` / `tests/enemy-trial.js` / `tests/combat-guide.js` /
-  `tests/loop.js`（M7 回廊长局 16 项端到端回归）、
+  `tests/loop.js`（M7 回廊长局 16 项端到端回归）、工作区一次性 `probe-visual.cjs`
+  （M8 渲染层真实调用探针，未入仓库、可复跑）、
   `docs/demo-90s.md`（90 秒高光蒙太奇与记录表）、`docs/requirements-2026-11-18.md`（需求台账，
   含 2026-11-19 版本对齐章节）、`docs/参赛改进与美术方向.md`（玩法重设计与验收口径）、
   `docs/盲玩验收包.md` + `盲玩交接卡.html` + `盲玩记录表.csv`（2026-11-19 新增真人盲玩验收三件套，
@@ -64,8 +74,9 @@
 | `node --test tests/combat-guide.js` | **5/5**（走位提示、出手条件及清除时机） |
 | `node --test tests/enemy-trial.js` | **25/25**（单房 A/B、预警、恢复和两种预设） |
 | `node --test tests/loop.js` | **16/16**（M7：廊道几何 / 三层编排 / 闭环与波 / 存档 / 端到端 / UI 接线） |
+| 渲染层真实调用探针 | **13 场景 PASS**：四套主题 × 首页 / 长局，加经典 / 回扫原型 / 击飞 / 单房 / print 方向；四主题首页最小差异 78 个色值、长局 121，证明材质配置确实进入画面 |
 | 浏览器实拍 | M5 四主题战斗画面 + 2026-11-18 `hud / pause / perk / unlock` 四张一次性无头截图 + 队友 `ui-evidence` 两种视口 8/8；不起端口 / 不起后台进程 |
-| 备注 | 2026-11-17 完成 M5 集成验收；2026-11-18 完成 B 板块 8 条修复；2026-11-19 队友补齐 B1 可达区域缺陷、总监独立复核 320 局 PASS；**同日完成 M7 回廊长局本体改造，`loop 16/16`**。单局 240s±30s 属真人手感范畴，理论模型与 Node 端到端均不作为手感验收结论；**真人盲玩（6–8 人）、扩首层真人复核、90 秒分镜按新玩法重剪、Qoder Sites 提交仍待办** |
+| 备注 | 2026-11-17 完成 M5 集成验收；2026-11-18 完成 B 板块 8 条修复；2026-11-19 队友补齐 B1 可达区域缺陷、总监独立复核 320 局 PASS；**同日完成 M7 回廊长局本体改造（`loop 16/16`）与 M8 整体美术风格大改（渲染探针 13 场景 PASS）**。单局 240s±30s 属真人手感范畴，理论模型与 Node 端到端均不作为手感 / 观感验收结论；**真人盲玩（6–8 人）、扩首层真人复核、90 秒分镜按新玩法重剪、真人观感确认、Qoder Sites 提交仍待办** |
 
 ---
 
@@ -469,3 +480,67 @@ M2 的「长局 + 存档」作为**已定方向**写进台账排下一轮，本�
   保持原状；`Luciandeng` 与 `origin/main` 的分支差异也**未擅自合并或强推**。
 - §8 第 6–8 条（真人计时 / 90 秒视频 / Qoder Sites 大赛提交）仍为待办，
   **GitHub 同步 ≠ 大赛提交**。
+
+---
+
+## 附录：M8 整体美术风格大改验收（2026-11-19 · 开发总监）
+
+### 一、触发与诊断
+
+用户在 M7 完成后明确「接着做②，我觉得整体美术风格都需要大改」。本轮不再产出
+Plan / 文档 / 验收包，直接改渲染层与界面；同时继续遵守「不做风险操作」的约束
+（不读浏览器配置 / 历史 / 进程 / 端口，不启服务、不留后台进程）。
+
+**先核到三个真实问题，不是凭感觉改**：
+
+| # | 诊断 | 证据 |
+|---|---|---|
+| 1 | `VISUALS` 的 `bgStyle` / `postFx`（bloom / aberration / grain / halo / vignette / shock）**从未被 render.js 读取**；`ground`、`frame`、`glow` 等字段根本不存在 | 旧 `render.js` 只用了 `particleStyle` / `enemyStyle`；`drawBackground` 仅按 `CUR.id` 改网格间距 |
+| 2 | 主题色板被硬编码常量覆盖 | 旧 `buildCur()` 以 `NIGHT` 为底，非 geometry 主题只把 `bg` 混一点 `ink`，随后又把 `pp.teal = col.guide` 等写回，四套画面几乎一样 |
+| 3 | 三套视觉语言互相打架 | CSS 荧光绿控制台（`--accent: #ddfa73`）+ Canvas 夜光制图（黄绿玩家）+ `direction='print'` 米黄套印版；`#app[data-theme]` 在 CSS 里没有任何分支，切主题只影响 Canvas |
+
+### 二、新方向：「深蓝测绘图 / 夜航档案」
+
+把「**脚下走过的回廊，就是这一击的攻击路线**」做成视觉母题：极深墨蓝底、
+细密坐标网与图廓刻度、**唯一高亮琥珀金**（玩家 / 闭环 / 主按钮 / 读数），
+路径雾青、危险朱红、次级藕紫。四套主题共享同一套骨架，只换材质与后处理强度，
+保证「同一台仪器、四种纸」。
+
+### 三、落盘清单（逐文件可核对）
+
+| 文件 | 改动 |
+|---|---|
+| `src/theme/index.js` | 重做 `PALETTES` 四套色板；`VISUALS` 新增 `ground`（step / major / motif / line）、`frame`（编号与题名）、`glow`、重定 `postFx`，并全部接线。保留 `THEMES` / vocab 与全部旧接口不变（m2m3 同构性校验不受影响） |
+| `src/ui/render.js` | 全量重写。`buildCur()` 改由主题色板 `nightFrom()` 推导整幅语义色；新增 `drawMotif()` 四套底纹、`drawPostFx()`（真正实现 halo / vignette / 低血红晕 / grain / shock / bloom）、`drawFrame()`（四角刻度 / 编号 / 层级读数 / 中心准星）、`layeredStroke()` 多层发光；重做 `drawBackground` / `drawWalls`（体积感）/ `drawLoopLanes`（可见通道 + 折角节点）/ `drawRecallPaths`（逆行回扫光带 + 头部光点）/ `drawRecallHubs` / `drawBullets` / `enemyGlyph` / `drawEnemy` / `playerGlyph` / `drawPlayer` / `drawIdle`（闭环回廊动态取景）/ `drawDamagePops` / `drawBossPhase` |
+| `src/ui/style.css` | 全量重写。新变量组 + 四套 `#app[data-theme]` 覆盖；`body` 细网格 + 角光；首页改档案卡（编号、细分隔、mono 小标）；HUD 左侧强调线；面板顶线与角标；词条卡左色条与 hover；按钮、toast、响应式断点全部保留 |
+| `index.html` | 首页副标题改「绕一圈 · 从另一侧回击」；**所有 id / class / script 顺序不变** |
+
+**接口不变量**：`C.ui.render.draw(ctx, s, t, direction, cue)` 签名、`W/H`、`direction='print'`
+套印版、engine→render 的全部数据契约（`s.walls / enemies / bullets / particles / trail /
+damagePops / bossPhase / loop / recall / impact / shake / transition`）均未改变；
+四个试玩原型（单房 A/B、击飞接力、回扫、走位提示）的绘制函数原样保留，
+颜色自动继承新色板。`tests/fullsuite.js` §A6 要求的 CSS 选择器
+（`#perk-cards[data-count="3"]` / `.perk-synergy` / `.perk-mechanic` / `.hud-extra`）全部保留。
+
+### 四、验证（实跑，不采信自报）
+
+| 项 | 结果 |
+|---|---|
+| `node --check`（全部 `src/**/*.js`） | 通过 |
+| 八套回归基线 | `smoke 20/20`、`m2m3 58/0/0`、`fullsuite 78/78`、`recall 9/9`、`impact 21/21`、`combat-guide 5/5`、`enemy-trial 25/25`、`loop 16/16` |
+| 渲染层真实调用探针 | 工作区一次性 `probe-visual.cjs`（未入仓库、可复跑）：完整 mock 2D 上下文按 `index.html` 顺序加载源码，**真实调用** `C.ui.render.draw()`，覆盖四套主题 × 首页 / 长局，以及经典 / 回扫原型 / 击飞 / 单房 / `print` 方向，**13 场景全 PASS、零异常** |
+| 主题分流定量核对 | 拦截 `fillStyle` / `strokeStyle` / `shadowColor` / `addColorStop` 收集实际用过的色值：四套主题首页两两最小差异 **78** 个色值、长局 **121** 个 → 材质与色板配置确实进入画面，不是空转 |
+| 约束 | 全程纯 Node + DOM stub，**不起 HTTP 服务、不开 CDP 端口、不留后台进程、不读浏览器配置 / 历史 / 进程 / 端口** |
+
+探针过程中出现一次 `ctx.bezierCurveTo is not a function`，定位为**探针 mock 缺失该 API**
+（武当墨晕山形用了合法 Canvas 2D 方法），补齐 mock 后复跑全绿；产品代码未因探针报错而放宽。
+
+### 五、如实标注（本附录不宣称的部分）
+
+- 自动化能证明**链路不抛异常、主题确实分流、基线未回归**，
+  **不能证明「好看 / 有氛围 / 不刺眼」**；真人观感仍需用户与盲玩者确认。
+- `docs/demo-90s.md` 的 90 秒分镜仍按旧玩法 / 旧美术撰写，主模式与新视觉下**需重剪**（本轮未改）。
+- 真人盲玩（6–8 人）、4 分钟真人计时、重开率仍未做；
+  §8 第 6–8 条（真人计时 / 90 秒视频 / Qoder Sites 大赛提交）仍为待办。
+- 队友在途的提示词 md 文件移动，总监**未提交、未丢弃**；`Luciandeng` 与 `origin/main`
+  的分支差异**未擅自合并或强推**。**GitHub 同步 ≠ 大赛提交**。
