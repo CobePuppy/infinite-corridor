@@ -430,18 +430,25 @@ test('§E4 三层通关、层末换层事件、续玩恢复与通关后清档', 
   assert.equal(s2.pickCount, 4);
 });
 
-test('§E5 UI 接线：首页主入口与续玩按钮可点击，LOOP 词条卡能渲染', async function () {
-  var started = 0, continued = 0, picked = null;
-  /* index.html 加载 main.js 时已 init 过一次；清掉旧监听再装测试监听，避免重复计数 */
+test('§E5 UI 接线：自由回廊主入口 / 续玩 / 经典回廊可回退，LOOP 词条卡能渲染', async function () {
+  var started = 0, continued = 0, classic = 0, picked = null;
+  /* index.html 加载 main.js 时已 init 过一次；清掉旧监听再装测试监听，避免重复计数。
+   * M11「替代重做骨架」把主入口换成自由回廊：btn-loop→onFree、续玩→onFreeContinue，
+   * 原 onLoop 契约迁到 btn-loop-classic（可回退点）。此处按新契约重立基线。 */
   els['btn-loop']._ev.click = [];
   els['btn-loop-continue']._ev.click = [];
-  S.init({ onStart: function () {}, onLoop: function () { started++; },
-    onLoopContinue: function () { continued++; }, onPick: function (id) { picked = id; },
+  document.getElementById('btn-loop-classic')._ev.click = [];
+  S.init({ onStart: function () {},
+    onFree: function () { started++; }, onFreeContinue: function () { continued++; },
+    onLoop: function () { classic++; }, onLoopContinue: function () {},
+    onPick: function (id) { picked = id; },
     onRecall: function () {}, onImpact: function () {}, onImpactCombinations: function () {},
     onTrial: function () {}, onRestart: function () {}, onUnlock: function () {},
     onToggleMute: function () {}, onPause: function () {}, onResume: function () {}, onHome: function () {} });
   els['btn-loop'].click();
-  assert.equal(started, 1, '回廊长局主入口应接入');
+  assert.equal(started, 1, 'M11 自由回廊主入口应接入 onFree');
+  els['btn-loop-classic'].click();
+  assert.equal(classic, 1, '经典回廊（旧版可回退）应仍接入 onLoop');
   reset();
   LM.save({ loop: { plan: { seed: 'ui' }, layer: 3, roomInLayer: 2 },
     player: { hp: 50, maxHp: 100 }, gold: 0, perks: {}, pickCount: 0, kills: 0, elapsed: 0,
@@ -843,7 +850,11 @@ test('§G6 规则 / 引擎 / HUD / CSS / 事件 / 渲染 六层静态接线契�
   assert.ok(eng.indexOf("emit(s, 'loopClosure'") !== -1);
   var rnd = fs.readFileSync(path.join(ROOT, 'src/ui/render.js'), 'utf8');
   assert.ok(rnd.indexOf('function drawClosure') !== -1);
-  assert.ok(rnd.indexOf('if (s.loop) drawClosure(ctx, s, t);') !== -1);
+  /* M11：兑现 / 破盾 / 护盾三态同时服务经典回廊与自由回廊两条分支。 */
+  assert.ok(rnd.indexOf('if (s.loop || s.free) drawClosure(ctx, s, t);') !== -1);
+  assert.ok(rnd.indexOf('if (s.loop || s.free) drawBossShield(ctx, s, t);') !== -1);
+  assert.ok(rnd.indexOf('function drawFreeTiles') !== -1 && rnd.indexOf('function drawFreePath') !== -1);
+  assert.ok(rnd.indexOf('function drawFreeDodge') !== -1);
   var lp = fs.readFileSync(path.join(ROOT, 'src/core/loop.js'), 'utf8');
   assert.ok(lp.indexOf('closureReport: closureReport') !== -1);
   var scr = fs.readFileSync(path.join(ROOT, 'src/ui/screens.js'), 'utf8');

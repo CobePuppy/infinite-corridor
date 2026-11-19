@@ -37,7 +37,11 @@
     var btn = $('btn-loop-continue');
     if (!btn) return;
     try {
-      var label = C.core.loop && C.core.loop.saveLabel ? C.core.loop.saveLabel() : '';
+      /* 主模式（自由回廊）优先；没有自由存档时仍要回落到经典回廊存档，
+       * 否则「旧版可回退」入口的续玩按钮会永远隐藏。 */
+      var label = '';
+      if (C.core.freewave && C.core.freewave.saveLabel) label = C.core.freewave.saveLabel();
+      if (!label && C.core.loop && C.core.loop.saveLabel) label = C.core.loop.saveLabel();
       btn.textContent = label || '';
       btn.classList.toggle('hidden', !label);
     } catch (e) { btn.classList.add('hidden'); }
@@ -355,7 +359,8 @@
     var idx = impact ? impact.wave - 1 : Math.min(s.roomIndex, total);
     var bossRoom = !impact && s.roomIndex >= total;
     $('room-name').textContent = s.room.name;
-    var layerPrefix = s.loop ? '第 ' + s.loop.layer + ' 层 · ' : '';
+    var layerPrefix = s.free ? '第 ' + s.free.layer + ' 层 · ' :
+      (s.loop ? '第 ' + s.loop.layer + ' 层 · ' : '');
     $('room-count').textContent = bossRoom ? (layerPrefix + '终室 · 首领') :
       (layerPrefix + '第 ' + (idx + 1) + ' / ' + total + (impact ? ' 组' : ' 间'));
 
@@ -429,8 +434,9 @@
     /* M10：连扫蓄势条。此前只有 hint 里一句「连扫 ×N」，玩家看不到
      * 26 秒窗口还剩多久、倍率到底是多少，连续闭环的收益不可读。 */
     var tb = $('streak-bar');
-    if (s.loop && s.phase !== 'won' && s.phase !== 'dead') {
-      var L2 = s.loop, SW = C.core.perks.BALANCE.loop;
+    if ((s.loop || s.free) && s.phase !== 'won' && s.phase !== 'dead') {
+      var L2 = s.loop || s.free;
+      var SW = s.free ? C.core.perks.BALANCE.free : C.core.perks.BALANCE.loop;
       var lv = Math.max(1, L2.streak || 0);
       tb.classList.remove('hidden');
       tb.dataset.level = String(lv);
@@ -457,10 +463,18 @@
       else if (impact.wave === 2) hint = C.core.perks.IMPACT[impact.perk].desc;
       else hint = impact.weapon === 'blade' ? '贴近飞行中的敌人，朝新方向再挥一刀' : '换个角度补一枪，改写飞行方向';
     }
-    else if (s.loop) {
-      var L = s.loop, rec = s.recall;
+    else if (s.loop || s.free) {
+      var L = s.loop || s.free, rec = s.recall;
       var streakTag = L.streak > 1 ? ' · 连扫 ×' + L.streak : '';
-      if (s.exitActive) hint = '本间已清 · 走到右侧廊口' + streakTag;
+      if (s.free) {
+        var f = s.free, sh3 = boss && boss.shield;
+        if (f.armed) hint = '回到起点兑现 · 已走 ' + f.path.length + ' 点' + streakTag;
+        else if (sh3 && sh3.state === 'exposed') hint = '护盾崩解 · ' + boss.guardOpen.toFixed(1) + ' 秒全额输出';
+        else if (sh3) hint = '第 ' + sh3.spec.phase + ' 相位 · 需' + sh3.spec.requiredLabel + '闭环破盾';
+        else hint = '按 E 定起点 · 绕一圈回到起点兑现' + streakTag;
+        if (f.tileBuff && f.tileBuff.kind !== 'none') hint += ' · ' + f.tileBuff.label;
+      }
+      else if (s.exitActive) hint = '本间已清 · 走到右侧廊口' + streakTag;
       else if (boss && boss.patrol) {
         var sh2 = boss.shield;
         if (sh2 && sh2.state === 'exposed') hint = '护盾崩解 · ' + boss.guardOpen.toFixed(1) + ' 秒全额输出 · 继续绕圈可吃回扫加成';
@@ -489,9 +503,9 @@
     }
     $('hint').textContent = hint;
     $('hint').classList.toggle('hint-guide', !!cue);
-    $('source').textContent = s.loop ? '回廊长局' :
+    $('source').textContent = s.free ? '自由回廊' : (s.loop ? '回廊长局' :
       (impact ? C.core.impact.weapons[impact.weapon].name : (s.prototype ? '试玩 ' + s.prototype :
-      (s.source === 'fallback' ? '离线模板 #' + ((s.templateIndex || 0) + 1) : 'AI 生成')));
+      (s.source === 'fallback' ? '离线模板 #' + ((s.templateIndex || 0) + 1) : 'AI 生成'))));
   }
 
   function showEnd(result) {
@@ -555,9 +569,11 @@
     handlers = h || {};
     $('btn-start').addEventListener('click', function () { handlers.onStart && handlers.onStart(); });
     var loopBtn = $('btn-loop');
-    if (loopBtn) loopBtn.addEventListener('click', function () { handlers.onLoop && handlers.onLoop(); });
+    if (loopBtn) loopBtn.addEventListener('click', function () { handlers.onFree && handlers.onFree(); });
     var contBtn = $('btn-loop-continue');
-    if (contBtn) contBtn.addEventListener('click', function () { handlers.onLoopContinue && handlers.onLoopContinue(); });
+    if (contBtn) contBtn.addEventListener('click', function () { handlers.onFreeContinue && handlers.onFreeContinue(); });
+    var classicBtn = $('btn-loop-classic');
+    if (classicBtn) classicBtn.addEventListener('click', function () { handlers.onLoop && handlers.onLoop(); });
     $('btn-trial-setup').addEventListener('click', function () { show('trial'); });
     $('btn-trial-back').addEventListener('click', function () { show('start'); });
     $('btn-trial-start').addEventListener('click', function () {

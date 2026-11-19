@@ -86,7 +86,12 @@
     p_loop_shard:  { name: '裂锋', rarity: 'common', max: 2, tag: '破盾',
       desc: '圈型不符时的折算蓄势提高，绕错路也能慢慢磨开护盾。' },
     p_loop_overdrive: { name: '过载回扫', rarity: 'epic', max: 1, tag: '破盾',
-      desc: '暴露窗口内回扫伤害再提升 60%，鼓励边跑边打。' }
+      desc: '暴露窗口内回扫伤害再提升 60%，鼓励边跑边打。' },
+    /* M11：手感层强化，仍走独立 LOOP 池，不进冻结 TABLE / IDS */
+    p_loop_cd: { name: '顺锋', rarity: 'rare', max: 2, tag: '连段',
+      desc: '回扫命中后缩短攻击冷却，连段越顺出手越快。' },
+    p_loop_dodge: { name: '借势', rarity: 'rare', max: 2, tag: '闪避',
+      desc: '完美闪避后的增伤窗口更长，普通闪避也能吃到加成。' }
   };
   var IMPACT = {
     p_impact_heavy: {
@@ -100,6 +105,13 @@
     },
     p_impact_pierce: {
       name: '贯穿', rarity: 'rare', tag: '手炮', desc: '一发点射可以连续击飞同一条线上的两个敌人。'
+    },
+    /* M11：击飞接力的两项武器改装 */
+    p_impact_reach: {
+      name: '长锋', rarity: 'rare', tag: '重刃', desc: '挥击范围更远、扇面更宽，更容易接上第二刀。'
+    },
+    p_impact_homing: {
+      name: '导引', rarity: 'epic', tag: '手炮', desc: '点射改为追踪弹，飞行中会朝最近的敌人转向。'
     }
   };
 
@@ -192,6 +204,49 @@
         exposedWaveMul: 2.2,
         speedStep: 0.13, speedCap: 1.6,
         cornerBends: 3
+      }
+    },
+    /* M11 统一时间轴：凝滞 / 影子延迟 / 完美闪避。只被 free 分支消费。 */
+    chrono: {
+      historyWindow: 1.2,
+      shadowDelay: 0.30, shadowBossDelay: 0.15,
+      stallScale: 0.30, stallTime: 0.35,
+      perfectWindow: 0.25,
+      perfectBuffTime: 2.6, perfectDamage: 1.35, perfectCdCut: 0.45,
+      normalBuffTime: 1.3, normalDamage: 1.15, normalCdCut: 0.20,
+      comboTiers: [3, 6, 10]
+    },
+    /* M11 自由回扫：面积取代「固定廊道长度」成为圈型与伤害的唯一判据。
+     * minArea / closeRadius / minPoints 共同防「原地转圈」刷闭环。 */
+    free: {
+      gridStep: 40,
+      minArea: 26000, closeRadius: 30, minPoints: 8, sampleGap: 14,
+      waveSpeed: 900, waveWidth: 34,
+      damage: 30, damageBig: 52, damageSmall: 24,
+      areaMid: 60000, areaBig: 110000,
+      bendAngle: 0.62, bendMin: 3,
+      streakStep: 0.16, streakCap: 3, streakWindow: 26,
+      bulletMul: 0.34,
+      layers: 3, roomsPerLayer: 3, enemyDamage: 8,
+      bossHp: 190, bossDamage: 8,
+      tile: { goodDamage: 1.22, goodSpeed: 1.12, goodCd: 0.86,
+              badDamage: 0.80, badSpeed: 0.88, badCd: 1.18, badHurt: 1.25,
+              count: 14 },
+      shield: {
+        phases: ['any', 'bent', 'big', 'small'],
+        baseNeed: 2, needEvery: 2, needCap: 4, weakCharge: 0.34,
+        baseWindow: 3.6, windowStep: 0.22, windowMin: 2.2,
+        reformTime: 1.15, exposedWaveMul: 2.2,
+        speedStep: 0.13, speedCap: 1.6
+      },
+      /* M11 四强化在主模式里的效果数值（词条定义仍在 IMPACT / LOOP 独立池）：
+       * 导引 → 子弹升级为可转向的投射物实体；长锋 → 回扫路径容差变宽；
+       * 顺锋 → 命中取消后摇；连段升段 → 垫步接上下一刀。 */
+      mod: {
+        homingTurn: 3.4, homingLife: 1.05, homingSpeed: 560,
+        reachWidth: 26,
+        cdCutBase: 0.14, cdCutPerTier: 0.10, cdCutPerk: 0.10,
+        stepPx: 10
       }
     },
     impact: {

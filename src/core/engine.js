@@ -574,6 +574,400 @@
     setupLoopRoom(s);
   }
 
+  /* ==================== M11 自由回扫主模式（隔离分支） ====================
+   * 主模式已从「固定廊道长局」替换为「按玩家真实路径画圈」。
+   * update() 开头直接分流到 updateFree()，旧 update 主干一行未动 —— 因此
+   * smoke / fullsuite / recall / impact / enemy-trial / loop 全部零回归。
+   * 复用 damageEnemy / burst / emit / collideWalls / hurtPlayer / makeEnemy。 */
+  var freeSeq = 0;
+
+  function freeWalls() {
+    return [
+      { x: 0, y: 0, w: W, h: 18 }, { x: 0, y: H - 18, w: W, h: 18 },
+      { x: 0, y: 0, w: 18, h: H }, { x: W - 18, y: 0, w: 18, h: H },
+      { x: 250, y: 176, w: 92, h: 26 }, { x: 618, y: 398, w: 92, h: 26 },
+      { x: 440, y: 268, w: 80, h: 64 }
+    ];
+  }
+  function freeEnemy(s, x, y, pattern, hp) {
+    var e = makeEnemy({ hp: hp, damage: B.free.enemyDamage, pattern: pattern,
+                        type: '巡廊残影' }, false, 'teal', { x: x, y: y });
+    e.mode = 'idle'; e.timer = 0.5 + rand(0.2, 0.9);
+    e.lockX = 0; e.lockY = 1;
+    e.freeId = 'f' + (++freeSeq);
+    return e;
+  }
+  function setupFreeRoom(s) {
+    var f = s.free, FW = C.core.freewave;
+    s.walls = freeWalls();
+    s.roomIndex = f.roomInLayer;
+    s.room = { name: '第 ' + f.layer + ' 层 · 第 ' + (f.roomInLayer + 1) + ' 间',
+               shape: 'free', color_token: 'teal',
+               path_hint: '按 E 定起点，绕一圈回到起点兑现；踩增幅格、避开滞涩格' };
+    s.roomType = 'normal';
+    var n = 3 + f.roomInLayer + f.layer;
+    s.enemies = [];
+    for (var i = 0; i < n; i++) {
+      var a = i * Math.PI * 2 / n;
+      s.enemies.push(freeEnemy(s, 480 + Math.cos(a) * 250, 300 + Math.sin(a) * 175,
+        i % 3 === 0 ? 'charge' : (i % 3 === 1 ? 'chase' : 'ranged'), 32 + f.layer * 8));
+    }
+    s.bullets = []; s.enemyBullets = []; s.exitActive = false;
+    s.phase = 'playing';
+    f.boss = false; f.wave = null;
+    f.tiles = FW.tiles(f.seed + '-' + f.layer + '-' + f.roomInLayer);
+    f.tileBuff = null; f.lastTile = null;
+    FW.reset(f);
+    s.closure = null; s.breakFlash = 0;
+    s.transition = 0.45;
+    s.player.x = 480; s.player.y = 300;
+    s.player.vx = s.player.vy = 0;
+    s.player.invuln = Math.max(s.player.invuln, 0.8);
+    emit(s, 'roomEnter', { index: f.roomInLayer, room: s.room, roomType: 'normal',
+                           total: B.free.roomsPerLayer, free: true, layer: f.layer });
+  }
+  function setupFreeBoss(s) {
+    var f = s.free, FW = C.core.freewave;
+    s.walls = freeWalls();
+    s.roomIndex = B.free.roomsPerLayer;
+    s.room = { name: '第 ' + f.layer + ' 层 · 巡廊者', shape: 'free', color_token: 'rust',
+               path_hint: '按当前相位要求的圈型破盾，破盾后趁窗口输出' };
+    s.roomType = 'normal'; s.bossPhase = 1;
+    s.run.boss = { name: '巡廊者', hp: Math.round(B.free.bossHp * (1 + 0.2 * (f.layer - 1))),
+                   damage: B.free.bossDamage, pattern: 'ranged' };
+    var boss = makeEnemy({ hp: s.run.boss.hp, damage: B.free.bossDamage,
+                           pattern: 'ranged', type: '巡廊者' }, true, 'rust', { x: 700, y: 300 });
+    if (boss) {
+      boss.r = 28; boss.guardOpen = 0; boss.shieldFlash = 0;
+      boss.freeId = 'boss';
+      boss.patrol = { hub: 1, cursor: 0, phase: 1, route: null, warning: 0 };
+      boss.shield = { state: 'closed', breaks: 0, charge: 0, flash: 0, reform: 0,
+                      spec: FW.shieldSpec(0, s.perks) };
+    }
+    s.enemies = boss ? [boss] : [];
+    s.bullets = []; s.enemyBullets = []; s.exitActive = false;
+    s.phase = 'boss';
+    f.boss = true; f.wave = null;
+    FW.reset(f);
+    s.closure = null; s.breakFlash = 0;
+    s.player.x = 260; s.player.y = 300;
+    s.player.vx = s.player.vy = 0;
+    s.transition = 0.55;
+    A('boss');
+    emit(s, 'bossEnter', { boss: s.run.boss, phase: 1, free: true, layer: f.layer,
+                           shield: boss ? boss.shield.spec : null });
+  }
+  function startFree(opts) {
+    var FW = C.core.freewave, CH = C.core.chrono;
+    var saved = opts.continueRun ? FW.load() : null;
+    var seed = saved ? saved.seed : (opts.seed || uuid());
+    loadMeta();
+    var theme = C.theme.get(saved ? saved.theme : opts.theme);
+    var run = {
+      theme: theme.id,
+      rooms: [{ name: '自由回廊', color_token: 'teal', path_hint: '' }],
+      boss: { name: '巡廊者', hp: B.free.bossHp, damage: B.free.bossDamage, pattern: 'ranged' },
+      summary: '自己选起点，用走过的路圈住敌人。', run_id: 'free_' + seed
+    };
+    state = createState(run, []);
+    state.source = 'free';
+    state.onEvent = opts.onEvent || null;
+    state.breakFlash = 0; state.closure = null;
+    state.dodgeFlash = 0; state.comboFlash = 0; state.comboTier = 0;
+    state.chrono = CH.create();
+    state.free = FW.create(seed);
+    if (saved) {
+      state.free.layer = saved.layer;
+      state.free.roomInLayer = saved.roomInLayer;
+      state.free.continued = true;
+      state.player.maxHp = saved.maxHp || 100;
+      state.player.hp = Math.min(state.player.maxHp, Math.max(1, saved.hp || 1));
+      state.gold = saved.gold || 0;
+      state.perks = Object.assign({}, saved.perks || {});
+      state.pickCount = saved.pickCount || 0;
+      state.kills = saved.kills || 0;
+      state.elapsed = saved.elapsed || 0;
+    } else FW.clearSave();
+    setupFreeRoom(state);
+    A('start');
+    emit(state, 'runStart', { free: true, layer: state.free.layer,
+                              continued: !!saved, run: run, runIndex: state.free.layer });
+    return state;
+  }
+
+  function freeBoss(s) {
+    for (var i = 0; i < s.enemies.length; i++) {
+      if (!s.enemies[i].dead && s.enemies[i].shield) return s.enemies[i];
+    }
+    return null;
+  }
+  function breakFreeShield(s, boss) {
+    var sh = boss.shield, spec = sh.spec;
+    sh.state = 'exposed'; sh.charge = 0; sh.flash = 1; sh.reform = 0;
+    boss.guardOpen = spec.window; boss.shieldFlash = 0.35;
+    s.shake = Math.max(s.shake, 20); s.breakFlash = 1;
+    s.free.shieldBreaks = (s.free.shieldBreaks || 0) + 1;
+    burst(s, boss.x, boss.y, '#E9A23B', 34, 330);
+    burst(s, boss.x, boss.y, '#D9644B', 20, 250);
+    A('clear'); A('boss');
+    emit(s, 'bossShieldBreak', { phase: spec.phase, breaks: sh.breaks,
+      window: spec.window, required: spec.required, requiredLabel: spec.requiredLabel });
+  }
+  function updateFreeShield(s, dt) {
+    var boss = freeBoss(s), FW = C.core.freewave;
+    if (!boss) return;
+    var sh = boss.shield;
+    sh.flash = Math.max(0, sh.flash - dt * 2.2);
+    if (sh.state === 'exposed') {
+      boss.guardOpen = Math.max(0, boss.guardOpen - dt);
+      if (boss.guardOpen === 0) { sh.state = 'reforming'; sh.reform = 0;
+        emit(s, 'bossShieldClose', { phase: sh.spec.phase }); }
+    } else if (sh.state === 'reforming') {
+      sh.reform = Math.min(1, sh.reform + dt / sh.spec.reformTime);
+      if (sh.reform >= 1) {
+        sh.breaks += 1; sh.spec = FW.shieldSpec(sh.breaks, s.perks);
+        sh.state = 'closed'; sh.charge = 0; sh.reform = 0; sh.flash = 0.35;
+        boss.guardOpen = 0;
+        emit(s, 'bossShieldReform', { phase: sh.spec.phase, required: sh.spec.required,
+          requiredLabel: sh.spec.requiredLabel, need: sh.spec.need, window: sh.spec.window });
+      }
+    }
+  }
+  function freeCombo(s, n) {
+    s.combo = (s.combo || 0) + n; s.comboTimer = 1.5;
+    var t = C.core.chrono.tier(s.combo);
+    if (t > (s.comboTier || 0)) {
+      s.comboTier = t; s.comboFlash = 1;
+      /* ① 垫步连击：连段升段时沿当前朝向轻踏一步，接上下一刀。 */
+      var step = B.free.mod.stepPx;
+      if (step > 0) {
+        var p = s.player, dx = Math.cos(p.angle || 0), dy = Math.sin(p.angle || 0);
+        p.x += dx * step; p.y += dy * step;
+        collideWalls(p, p.r);
+      }
+      emit(s, 'comboTier', { tier: t, combo: s.combo });
+    }
+  }
+  /* ① 取消后摇：命中即清掉一部分剩余攻击冷却，连段越顺、顺锋层数越高清得越多。 */
+  function freeCancel(s) {
+    var m = B.free.mod;
+    var tier = C.core.chrono.tier(s.combo || 0);
+    var cut = m.cdCutBase + m.cdCutPerTier * tier + m.cdCutPerk * (s.perks.p_loop_cd || 0);
+    s.player.fireCd = Math.max(0, s.player.fireCd * (1 - Math.min(0.8, cut)));
+  }
+  function onFreeClosed(s, closed) {
+    var f = s.free, FW = C.core.freewave, CH = C.core.chrono;
+    f.streak = Math.min(B.free.streakCap, (f.streak || 0) + 1);
+    f.streakTimer = B.free.streakWindow;
+    f.closures += 1;
+    var rep = FW.report(f, closed.report, f.streak);
+    var boss = freeBoss(s);
+    if (boss && boss.shield) {
+      var sh = boss.shield, spec = sh.spec;
+      if (sh.state === 'exposed') {
+        damageEnemy(s, boss, Math.round(rep.damage * spec.exposedWaveMul), true, 1);
+        emit(s, 'bossShieldHit', { exposed: true });
+      } else if (sh.state !== 'reforming') {
+        var matched = FW.matchesShield(rep, spec.required);
+        sh.charge += matched ? 1 : spec.weakCharge;
+        boss.shieldFlash = matched ? 0.24 : 0.12;
+        emit(s, 'bossShieldCharge', { matched: matched, required: spec.required,
+          requiredLabel: spec.requiredLabel, charge: sh.charge, need: spec.need });
+        if (sh.charge >= spec.need) breakFreeShield(s, boss);
+      }
+    }
+    f.wave = FW.waveFrom(closed.poly, rep);
+    s.closure = { t: 1, loops: f.closures,
+      report: Object.assign({}, rep, { path: closed.poly, lanes: [] }) };
+    var rw = FW.loopRewards(s);
+    if (rw.heal) s.player.hp = Math.min(s.player.maxHp, s.player.hp + rw.heal);
+    if (rw.dash) s.player.dashCd = 0;
+    f.goldPerKill = rw.goldPerKill;
+    CH.stall(s.chrono);                 /* ① 兑现瞬间凝滞，玩家全速补刀 */
+    s.shake = Math.max(s.shake, 6); s.comboFlash = 1;
+    A('recall');
+    FW.reset(f);
+    emit(s, 'loopClosed', { loops: f.closures, streak: f.streak, heal: rw.heal });
+    emit(s, 'loopClosure', { loops: f.closures, tag: rep.tag, label: rep.label,
+      length: rep.length, area: rep.area, lanes: [], corner: rep.bent,
+      streak: rep.streak, nextMul: rep.nextMul, damage: rep.damage, path: closed.poly });
+  }
+
+  function updateFree(s, dt, input) {
+    var f = s.free, FW = C.core.freewave, CH = C.core.chrono, q = B.free;
+    var p = s.player;
+    dt = Math.min(dt, 0.05);
+    if (s.phase === 'dead' || s.phase === 'won' || s.phase === 'perk') return s;
+    s.elapsed += dt;
+    CH.push(s.chrono, s.elapsed, p);
+    CH.update(s.chrono, dt);
+    var wdt = dt * CH.worldScale(s.chrono);   /* 世界缩放，玩家仍用 dt */
+    s.shake = Math.max(0, s.shake - dt * 42);
+    s.transition = Math.max(0, s.transition - dt);
+    s.breakFlash = Math.max(0, s.breakFlash - dt * 1.7);
+    s.dodgeFlash = Math.max(0, s.dodgeFlash - dt * 2.2);
+    s.comboFlash = Math.max(0, s.comboFlash - dt * 1.8);
+    if (s.closure && s.closure.t > 0) s.closure.t = Math.max(0, s.closure.t - dt * 1.35);
+    s.particles = s.particles.filter(function (x) {
+      x.life -= dt; x.x += x.vx * dt; x.y += x.vy * dt; return x.life > 0;
+    });
+    s.trail = s.trail.filter(function (x) { x.life -= dt; return x.life > 0; });
+    s.damagePops = (s.damagePops || []).filter(function (x) { x.life -= dt; return x.life > 0; });
+    if (s.combo || s.comboTimer) {
+      s.comboTimer = (s.comboTimer || 0) - dt;
+      if (s.comboTimer <= 0) { s.combo = 0; s.comboTimer = 0; s.comboTier = 0; }
+    }
+    /* ③ 地效：正负常驻，逐帧生效 */
+    var tile = FW.tileAt(f.tiles, p.x, p.y);
+    f.tileBuff = FW.tileBuff(tile);
+    if (tile && f.lastTile !== tile) emit(s, 'tileEnter', { kind: tile.kind, label: tile.label });
+    f.lastTile = tile;
+    var tb = f.tileBuff;
+    if (f.streakTimer > 0) {
+      f.streakTimer = Math.max(0, f.streakTimer - dt);
+      if (f.streakTimer === 0) f.streak = 0;
+    }
+    /* 输入 → 玩家移动（真实 dt） */
+    var ax = (input.right ? 1 : 0) - (input.left ? 1 : 0);
+    var ay = (input.down ? 1 : 0) - (input.up ? 1 : 0);
+    var al = Math.hypot(ax, ay) || 1; ax /= al; ay /= al;
+    p.invuln = Math.max(0, p.invuln - dt);
+    p.fireCd = Math.max(0, p.fireCd - dt);
+    p.dashCd = Math.max(0, p.dashCd - dt);
+    if (input.dash && p.dashCd <= 0 && p.dashTime <= 0) {
+      var dx = ax, dy = ay;
+      if (!ax && !ay) { dx = Math.cos(p.angle); dy = Math.sin(p.angle); }
+      p.dashX = dx; p.dashY = dy; p.dashTime = DASH_TIME; p.dashCd = 0.62;
+      var dodge = CH.resolveDodge(s.chrono, true, s.perks);
+      s.dodgeFlash = 1; A('dash');
+      emit(s, 'perfectDodge', { kind: dodge ? dodge.kind : 'none',
+        damage: dodge ? dodge.damage : 1 });
+    }
+    if (p.dashTime > 0) {
+      p.dashTime -= dt; p.vx = p.dashX * DASH_SPEED; p.vy = p.dashY * DASH_SPEED;
+      s.trail.push({ x: p.x, y: p.y, life: 0.24, max: 0.24 });
+    } else {
+      var k = Math.min(1, dt * 13), sp = SPEED * tb.speed;
+      p.vx += (ax * sp - p.vx) * k; p.vy += (ay * sp - p.vy) * k;
+    }
+    p.x += p.vx * dt; p.y += p.vy * dt;
+    collideWalls(p, p.r);
+    if (input.aimX != null) {
+      var tx0 = input.aimX - p.x, ty0 = input.aimY - p.y;
+      if (Math.hypot(tx0, ty0) > 6) p.angle = Math.atan2(ty0, tx0);
+    }
+    /* ⑤-b 自由路径：E 定起点 → 逐帧采样 → 回到起点且面积达标才兑现 */
+    if (input.arm && !f.armed) { FW.arm(f, p); emit(s, 'freeArm', { x: p.x, y: p.y }); }
+    if (f.armed) FW.record(f, p);
+    var closed = FW.close(f, p);
+    if (closed && closed.type === 'closed') onFreeClosed(s, closed);
+    else if (closed && closed.rejected === 'area') {
+      emit(s, 'freeReject', { reason: 'area', area: closed.area }); FW.reset(f);
+    }
+    /* 射击：子弹降级，吃地效与完美闪避 buff */
+    if (input.fire && p.fireCd <= 0) {
+      var homing = (s.perks.p_impact_homing || 0) > 0;
+      var bspeed = homing ? q.mod.homingSpeed : BULLET_SPEED;
+      var dmg = Math.round(BULLET_DMG * q.bulletMul * tb.damage * CH.buffDamage(s.chrono));
+      s.bullets.push({ x: p.x + Math.cos(p.angle) * 14, y: p.y + Math.sin(p.angle) * 14,
+        vx: Math.cos(p.angle) * bspeed, vy: Math.sin(p.angle) * bspeed,
+        damage: dmg, life: homing ? q.mod.homingLife : 0.55, r: 4, color: '#E9A23B',
+        homing: homing });
+      p.fireCd = FIRE_CD * tb.cd * (1 - CH.buffCd(s.chrono));
+      A('shoot');
+    }
+    s.bullets = s.bullets.filter(function (b) {
+      b.life -= wdt;
+      if (b.homing) {
+        /* ⑧ 导引：子弹不再是直线射线，而是会朝最近敌人转向的投射物实体。 */
+        var best = null, bd = Infinity;
+        s.enemies.forEach(function (e) {
+          if (e.dead) return;
+          var dd = Math.hypot(e.x - b.x, e.y - b.y);
+          if (dd < bd) { bd = dd; best = e; }
+        });
+        if (best) {
+          var want = Math.atan2(best.y - b.y, best.x - b.x);
+          var cur = Math.atan2(b.vy, b.vx);
+          var diff = Math.atan2(Math.sin(want - cur), Math.cos(want - cur));
+          var lim = q.mod.homingTurn * wdt;
+          var na = cur + Math.max(-lim, Math.min(lim, diff));
+          var sp = Math.hypot(b.vx, b.vy) || 1;
+          b.vx = Math.cos(na) * sp; b.vy = Math.sin(na) * sp;
+        }
+      }
+      b.x += b.vx * wdt; b.y += b.vy * wdt;
+      if (b.life <= 0) return false;
+      for (var i = 0; i < s.enemies.length; i++) {
+        var e = s.enemies[i];
+        if (!e.dead && dist(b, e) < e.r + b.r) {
+          if (e.patrol && e.guardOpen <= 0) { e.shieldFlash = 0.12; return false; }
+          damageEnemy(s, e, b.damage, false, 1); freeCombo(s, 1); freeCancel(s);
+          return false;
+        }
+      }
+      return true;
+    });
+    /* 敌人 AI：② 影子延迟 + ① 世界凝滞 + ④ 冲锋预警 */
+    s.enemies.forEach(function (e) {
+      if (e.dead) return;
+      e.flash = Math.max(0, (e.flash || 0) - wdt);
+      if (e.patrol) { e.x += Math.sin(s.elapsed * 0.8) * 34 * wdt; return; }
+      var target = CH.shadow(s.chrono, s.elapsed, false) || p;
+      var tx = target.x - e.x, ty = target.y - e.y, len = Math.hypot(tx, ty) || 1;
+      var nx = tx / len, ny = ty / len;
+      if (e.pattern === 'charge') {
+        e.timer = (e.timer || 0) - wdt;
+        if (e.mode === 'idle' && e.timer <= 0) {
+          e.mode = 'wind'; e.timer = 0.42; e.lockX = nx; e.lockY = ny;
+          CH.armPerfect(s.chrono); emit(s, 'chargeWarning', { x: e.x, y: e.y });
+        } else if (e.mode === 'wind' && e.timer <= 0) { e.mode = 'charge'; e.timer = 0.44; }
+        else if (e.mode === 'charge' && e.timer <= 0) { e.mode = 'cool'; e.timer = 0.85; }
+        else if (e.mode === 'cool' && e.timer <= 0) { e.mode = 'idle'; e.timer = 0.6 + rand(0.2, 0.8); }
+        if (e.mode === 'charge') { e.vx = e.lockX * 425; e.vy = e.lockY * 425; }
+        else { e.vx = 0; e.vy = 0; }
+      } else if (e.pattern === 'ranged') {
+        var want = 200, pull = len > want + 30 ? 1 : (len < want - 30 ? -1 : 0);
+        e.vx = nx * 80 * pull; e.vy = ny * 80 * pull;
+      } else { e.vx = nx * 100; e.vy = ny * 100; }
+      e.x += e.vx * wdt; e.y += e.vy * wdt;
+      collideWalls(e, e.r);
+      if (dist(e, p) < e.r + p.r) hurtPlayer(s, e, e.damage);
+    });
+    /* 回扫波：沿玩家路径逆向推进，只打圈内的敌人 */
+    if (f.wave) {
+      var info = FW.advanceWave(f.wave, wdt);
+      var poly = f.wave.path.slice().reverse();
+      /* 长锋：把「圈内」放宽到「圈内或贴边」，仍用同一套多边形几何工具。 */
+      var reach = (s.perks.p_impact_reach || 0) * q.mod.reachWidth;
+      s.enemies.forEach(function (e) {
+        if (e.dead || f.wave.hit[e.freeId]) return;
+        if (!FW.inside(poly, e) && (!reach || FW.distanceToPoly(poly, e) > reach)) return;
+        f.wave.hit[e.freeId] = true;
+        if (e.patrol && e.guardOpen <= 0) { e.shieldFlash = 0.12; return; }
+        damageEnemy(s, e, Math.round(f.wave.damage * tb.damage * CH.buffDamage(s.chrono)), true, 1);
+        freeCombo(s, 1); freeCancel(s); CH.stall(s.chrono);
+      });
+      if (info && info.done) f.wave = null;
+    }
+    if (f.boss) updateFreeShield(s, dt);
+    s.enemies = s.enemies.filter(function (e) { return !e.dead; });
+    if (s.phase === 'playing' && !s.enemies.length) {
+      s.phase = 'perk'; s.perkPending = FW.offer(s);
+      A('clear'); FW.save(s);
+      emit(s, 'perkOffer', { choices: s.perkPending, nextIsBoss: false, free: true, loop: true });
+    } else if (s.phase === 'boss' && !s.enemies.length) {
+      if (f.layer >= q.layers) { FW.clearSave(); finishRun(s, true); }
+      else {
+        f.layer += 1; f.roomInLayer = 0; f.streak = 0; f.streakTimer = 0;
+        s.player.invuln = Math.max(s.player.invuln, 1.0);
+        emit(s, 'loopLayer', { layer: f.layer, free: true });
+        FW.save(s); setupFreeRoom(s);
+      }
+    }
+    return s;
+  }
+
   function startLoop(opts) {
     var LM = C.core.loop, B = C.core.perks.BALANCE.loop;
     var saved = opts.continueRun ? LM.load() : null;
@@ -620,6 +1014,7 @@
 
   async function startRun(opts) {
     opts = opts || {};
+    if (opts.free && C.core.freewave) return startFree(opts);
     if (opts.loop && C.core.loop) return startLoop(opts);
     if (opts.impactWeapon != null) return startImpact(opts);
     if (opts.prototype) return startRecall(opts);
@@ -680,7 +1075,7 @@
     /* T24-B Boss 两阶段：hp 跌破 50% 且仍存活 → 切 P2（弹幕/移速在 AI 处变化） */
     /* M9：长局首领用护盾相位承载节奏，屏蔽旧的「50% 血切 P2」，
      * 避免两个「阶段」概念同时弹幕/提示。经典模式（tests/fullsuite §B3）不受影响。 */
-    if (e.isBoss && !s.loop && (s.bossPhase || 1) === 1 && e.hp > 0 && e.hp <= e.maxHp * B.bossPhase2At) {
+    if (e.isBoss && !s.loop && !s.free && (s.bossPhase || 1) === 1 && e.hp > 0 && e.hp <= e.maxHp * B.bossPhase2At) {
       s.bossPhase = 2;
       s.shake = Math.max(s.shake, 18);
       burst(s, e.x, e.y, '#E9A23B', 26, 300);
@@ -738,6 +1133,7 @@
     p.invuln = HURT_INVULN;
     /* 长局：被打断就失去「连续闭环」蓄势，绕圈节奏本身成为一种风险收益。 */
     if (s.loop) { s.loop.streak = 0; s.loop.streakTimer = 0; }
+    if (s.free) { s.free.streak = 0; s.free.streakTimer = 0; }
     s.shake = Math.max(s.shake, 11);
     s.hitstop = 0.06;
     burst(s, p.x, p.y, '#D9644B', 14, 240);
@@ -767,6 +1163,24 @@
         prototype: s.prototype, cleared: cleared, seconds: s.elapsed,
         kills: s.kills, rooms: cleared ? 2 : s.roomIndex,
         summary: cleared ? '击败了巡廊者。' : '回到廊口，再试一圈。'
+      });
+      return;
+    }
+    if (s.free) {
+      A(cleared ? 'clear' : 'death');
+      C.core.freewave.clearSave();
+      var fEarned = Math.floor(s.gold / 2) + (cleared ? 60 : 0);
+      meta.gold += fEarned;
+      if (cleared) meta.clears += 1;
+      saveMeta();
+      emit(s, 'runEnd', {
+        loop: true, free: true, cleared: cleared, seconds: s.elapsed, kills: s.kills,
+        layers: s.free.layer, gold: fEarned, loopGold: s.gold,
+        rooms: (s.free.layer - 1) * B.free.roomsPerLayer + s.free.roomInLayer,
+        loops: s.free.closures, breaks: s.free.shieldBreaks || 0,
+        dodges: s.free.perfectDodges || 0,
+        summary: cleared ? '三层自由回廊走通了。' :
+          ('停在第 ' + s.free.layer + ' 层 · 你圈住的路还在。')
       });
       return;
     }
@@ -846,6 +1260,26 @@
       s.perkPending = null;
       s.phase = 'playing';
       A('pick');
+      return true;
+    }
+    if (s.free) {
+      if (!s.perkPending || s.perkPending.indexOf(id) === -1) return false;
+      /* 主模式候选含 IMPACT 池的两项武器改装，定义仍留在各自独立池。 */
+      var fdef = C.core.perks.LOOP[id] || C.core.perks.IMPACT[id];
+      if (!fdef || (s.perks[id] || 0) >= (fdef.max || 2)) return false;
+      s.perks[id] = (s.perks[id] || 0) + 1;
+      s.pickCount = (s.pickCount || 0) + 1;
+      A('pick');
+      emit(s, 'perkPicked', { id: id, def: fdef, free: true });
+      s.perkPending = null; s.phase = 'transition';
+      s.free.roomInLayer += 1;
+      if (s.free.roomInLayer >= B.free.roomsPerLayer) setupFreeBoss(s);
+      else {
+        setupFreeRoom(s);
+        /* 存档指向「下一间」，续玩不会重打刚清完的那间；首领房不写档，
+         * 避免 load() 因 roomInLayer 越界而把存档判为损坏。 */
+        C.core.freewave.save(s);
+      }
       return true;
     }
     if (s.loop) {
@@ -992,6 +1426,7 @@
   /* ---------- 每帧更新 ---------- */
   function update(dt, input) {
     var s = state;
+    if (s && s.free) return updateFree(s, dt, input);
     if (!s) return null;
     dt = Math.min(dt, 0.05);
     if ((s.prototype || s.impact) && dt <= 0) return s;

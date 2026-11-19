@@ -752,6 +752,12 @@
       else if (es === 'taiji') ctx.ellipse(b.x, b.y, b.crit ? 6 : 4.5, b.crit ? 3.6 : 2.8, Math.atan2(b.vy, b.vx), 0, Math.PI * 2);
       else ctx.arc(b.x, b.y, b.crit ? 4 : 2.8, 0, Math.PI * 2);
       ctx.fill();
+      if (b.homing) {
+        /* M11 导引弹：投射物实体用一圈细环 + 前向短矢与直线弹区分。 */
+        ctx.strokeStyle = rgba(col.amber, 0.85); ctx.lineWidth = 1.2;
+        ctx.beginPath(); ctx.arc(b.x, b.y, 9, 0, Math.PI * 2); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(b.x + 9, b.y); ctx.lineTo(b.x + 15, b.y); ctx.stroke();
+      }
       if (b.crit) { ctx.strokeStyle = rgba(col.flash, 0.8); ctx.lineWidth = 1; ctx.stroke(); }
     });
     s.enemyBullets.forEach(function (b) {
@@ -1193,7 +1199,13 @@
     var rep = c.report, p = s.player, color = waveColor(s);
     ctx.save();
     var lanes = s.recall && s.recall.layout && s.recall.layout.lanes;
-    if (lanes && rep.lanes.length) {
+    if (rep.path && rep.path.length > 2) {
+      /* M11 自由回廊：这一圈就是玩家真实走出来的多边形，沿边界收束成光带。 */
+      ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+      tracePath(ctx, rep.path); ctx.closePath();
+      ctx.fillStyle = rgba(color, 0.07 * f); ctx.fill();
+      layeredStroke(ctx, rep.path.concat([rep.path[0]]), 3 + 8 * f, color, 0.55 * f, 14);
+    } else if (lanes && rep.lanes.length) {
       ctx.lineCap = 'round'; ctx.lineJoin = 'round';
       rep.lanes.forEach(function (id) {
         var lane = lanes[id];
@@ -1214,12 +1226,198 @@
     var bx = clamp(p.x, 150, W - 150), by = clamp(p.y - 58 - k * 14, 44, H - 44);
     ctx.font = '700 20px "Microsoft YaHei", system-ui, sans-serif';
     ctx.lineWidth = 4; ctx.strokeStyle = rgba(col.outline, 0.9);
-    ctx.strokeText('闭环兑现', bx, by);
-    ctx.fillStyle = color; ctx.fillText('闭环兑现', bx, by);
+    var title = s.free ? '自由闭环' : '闭环兑现';
+    ctx.strokeText(title, bx, by);
+    ctx.fillStyle = color; ctx.fillText(title, bx, by);
     ctx.font = '500 10px ui-monospace, Consolas, monospace';
     ctx.fillStyle = col.amber;
-    ctx.fillText('LOOP CLOSED / ' + rep.label + ' / ' + rep.length + ' / STREAK x' + rep.streak, bx, by + 19);
+    var metric = rep.area ? rep.area + 'm²' : rep.length;
+    ctx.fillText('LOOP CLOSED / ' + rep.label + ' / ' + metric + ' / STREAK x' + rep.streak, bx, by + 19);
     ctx.restore();
+  }
+
+  /* ==================== M11 自由回扫主模式渲染 ====================
+   * 主模式已从「固定廊道」换成「玩家自己走出来的多边形」。这里把四件此前
+   * 只存在于状态里、画面上完全看不见的东西画出来：
+   *   ⑥ 常驻正负地效格；⑤-b 正在走的路径 / 起点 / 回扫波；
+   *   ①③④ 凝滞 / 完美闪避 / 连段等级；⑩ 自由闭环兑现（复用 drawClosure）。
+   * 护盾三态与破盾爆发直接复用 M9 的 drawBossShield / drawBreakBurst ——
+   * freewave 刻意沿用同一份 boss.shield 结构，因此无需第二套绘制逻辑。 */
+  function freeState(s) { return s && s.free; }
+
+  function drawFreeTiles(ctx, s, t) {
+    var f = freeState(s), tiles = f && f.tiles;
+    if (!tiles || !tiles.length) return;
+    var col = CUR.col, glow = CUR.vis.glow || 1;
+    ctx.save();
+    tiles.forEach(function (tile) {
+      var good = tile.kind === 'good';
+      var c = good ? col.guide : col.rust;
+      var pulse = 0.5 + 0.5 * Math.sin(t * 2.1 + tile.gx * 0.7 + tile.gy * 0.9);
+      ctx.fillStyle = rgba(c, (good ? 0.055 : 0.07) * (0.7 + 0.3 * pulse) * glow);
+      ctx.fillRect(tile.x + 1, tile.y + 1, tile.w - 2, tile.h - 2);
+      ctx.strokeStyle = rgba(c, good ? 0.45 : 0.55); ctx.lineWidth = 1.2;
+      ctx.strokeRect(tile.x + 2.5, tile.y + 2.5, tile.w - 5, tile.h - 5);
+      ctx.lineCap = 'round'; ctx.lineWidth = 1.8;
+      ctx.strokeStyle = rgba(c, 0.8);
+      var cx = tile.x + tile.w / 2, cy = tile.y + tile.h / 2;
+      ctx.beginPath();
+      ctx.moveTo(cx - 5, cy); ctx.lineTo(cx + 5, cy);
+      if (good) { ctx.moveTo(cx, cy - 5); ctx.lineTo(cx, cy + 5); }
+      ctx.stroke();
+      ctx.font = '500 8px ui-monospace, Consolas, monospace';
+      ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
+      ctx.fillStyle = rgba(c, 0.78);
+      ctx.fillText(good ? 'BOOST' : 'SLOW', cx, tile.y + tile.h - 4);
+    });
+    ctx.restore();
+  }
+
+  /* 只读地从波的 position 求头部，绝不调用 FW.advanceWave（那会改状态）。 */
+  function waveHead(w) {
+    if (!w || !w.path || !w.path.length) return null;
+    var total = 0, i, head = w.path[0];
+    for (i = 1; i < w.path.length; i++)
+      total += Math.hypot(w.path[i].x - w.path[i - 1].x, w.path[i].y - w.path[i - 1].y);
+    var d = Math.min(w.position, total);
+    for (i = 1; i < w.path.length; i++) {
+      var a = w.path[i - 1], b = w.path[i];
+      var seg = Math.hypot(b.x - a.x, b.y - a.y);
+      if (d <= seg) {
+        var k = seg ? d / seg : 0;
+        head = { x: a.x + (b.x - a.x) * k, y: a.y + (b.y - a.y) * k };
+        break;
+      }
+      d -= seg;
+    }
+    return { head: head, total: total };
+  }
+
+  function drawFreePath(ctx, s, t) {
+    var f = freeState(s);
+    if (!f) return;
+    var col = CUR.col, glow = CUR.vis.glow || 1, color = waveColor(s);
+    ctx.save(); ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    if (f.armed && f.path.length > 1) {
+      var poly = f.path;
+      /* 已走区域淡填充，让「圈住了多少」在走的过程中就可读 */
+      tracePath(ctx, poly); ctx.closePath();
+      ctx.fillStyle = rgba(color, 0.045); ctx.fill();
+      layeredStroke(ctx, poly, 3.4, col.guide, 0.9, 11 * glow);
+      tracePath(ctx, poly); ctx.lineWidth = 1;
+      ctx.strokeStyle = rgba('#FFFFFF', 0.30); ctx.stroke();
+      /* 起点标记 + 回到起点的虚线：玩家唯一需要知道的「还差多远」 */
+      var o = f.origin, p = s.player;
+      if (ctx.setLineDash) ctx.setLineDash([6, 8]);
+      ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(o.x, o.y);
+      ctx.strokeStyle = rgba(col.amber, 0.42); ctx.lineWidth = 1.4; ctx.stroke();
+      if (ctx.setLineDash) ctx.setLineDash([]);
+      var pulse = 0.5 + 0.5 * Math.sin(t * 5);
+      ctx.strokeStyle = rgba(col.amber, 0.85); ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(o.x, o.y, 9 + 3 * pulse, 0, Math.PI * 2); ctx.stroke();
+      ctx.fillStyle = rgba(col.amber, 0.14);
+      ctx.beginPath(); ctx.arc(o.x, o.y, 9 + 3 * pulse, 0, Math.PI * 2); ctx.fill();
+      ctx.font = '500 10px ui-monospace, Consolas, monospace';
+      ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
+      ctx.lineWidth = 3; ctx.strokeStyle = rgba(col.bg, 0.9);
+      ctx.strokeText('ORIGIN / 回到此处兑现', o.x, o.y - 16);
+      ctx.fillStyle = col.amber; ctx.fillText('ORIGIN / 回到此处兑现', o.x, o.y - 16);
+    }
+    if (f.wave) {
+      var w = f.wave, pts = w.path, info = waveHead(w);
+      layeredStroke(ctx, pts, 3.0, color, 0.30, 8 * glow);
+      /* 已推进部分亮起：从起点一路点到 head */
+      var travelled = [pts[0]], acc = 0, d = Math.min(w.position, info.total);
+      for (var i = 1; i < pts.length; i++) {
+        var seg = Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y);
+        if (acc + seg >= d) { travelled.push(info.head); break; }
+        acc += seg; travelled.push(pts[i]);
+      }
+      layeredStroke(ctx, travelled, 5, color, 0.95, 16 * glow);
+      var tip = info.head;
+      var rg = ctx.createRadialGradient(tip.x, tip.y, 0, tip.x, tip.y, 20 * glow);
+      rg.addColorStop(0, rgba('#FFFFFF', 0.95));
+      rg.addColorStop(0.35, rgba(color, 0.72));
+      rg.addColorStop(1, rgba(color, 0));
+      ctx.fillStyle = rg;
+      ctx.beginPath(); ctx.arc(tip.x, tip.y, 20 * glow, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#FFFFFF';
+      ctx.beginPath(); ctx.arc(tip.x, tip.y, 3.4, 0, Math.PI * 2); ctx.fill();
+    }
+    ctx.restore();
+  }
+
+  /* ①③④ 凝滞 / 完美闪避 / 连段等级：全部画在玩家身上，不占 HUD。 */
+  function drawFreeDodge(ctx, s, t) {
+    var f = freeState(s), ch = s.chrono, p = s.player;
+    if (!f || !ch || !p) return;
+    var Q = C.core.perks.BALANCE.chrono;
+    var col = CUR.col;
+    ctx.save(); ctx.translate(p.x, p.y);
+    if (ch.stall > 0) {
+      /* 斯安维斯坦：世界被压慢时的时间刻度环 */
+      var k = clamp(ch.stall / Q.stallTime, 0, 1);
+      ctx.strokeStyle = rgba(col.fold, 0.22 + 0.35 * k); ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(0, 0, p.r + 26 + 10 * (1 - k), 0, Math.PI * 2); ctx.stroke();
+      ctx.strokeStyle = rgba(col.fold, 0.55); ctx.lineWidth = 1;
+      for (var q = 0; q < 12; q++) {
+        var a = q * Math.PI / 6 + t * 0.6;
+        ctx.beginPath();
+        ctx.moveTo(Math.cos(a) * (p.r + 20), Math.sin(a) * (p.r + 20));
+        ctx.lineTo(Math.cos(a) * (p.r + 27), Math.sin(a) * (p.r + 27));
+        ctx.stroke();
+      }
+    }
+    if (ch.perfect && ch.perfect.t > 0) {
+      /* 完美闪避窗口：金色倒计时环，明确告诉玩家「现在按 Shift」 */
+      var pk = clamp(ch.perfect.t / Q.perfectWindow, 0, 1);
+      ctx.strokeStyle = rgba(col.amber, 0.22); ctx.lineWidth = 4;
+      ctx.beginPath(); ctx.arc(0, 0, p.r + 15, 0, Math.PI * 2); ctx.stroke();
+      ctx.strokeStyle = rgba(col.crit, 0.95); ctx.lineWidth = 4;
+      ctx.beginPath();
+      ctx.arc(0, 0, p.r + 15, -Math.PI / 2, -Math.PI / 2 + pk * Math.PI * 2);
+      ctx.stroke();
+    }
+    if (s.dodgeFlash > 0) {
+      var df = clamp(s.dodgeFlash, 0, 1), perfect = ch.buff && ch.buff.kind === 'perfect';
+      ctx.strokeStyle = rgba(perfect ? col.crit : col.guide, 0.7 * df);
+      ctx.lineWidth = (perfect ? 4 : 2) * df;
+      ctx.beginPath(); ctx.arc(0, 0, p.r + 12 + (1 - df) * 56, 0, Math.PI * 2); ctx.stroke();
+    }
+    /* 连段等级环：T1/T2/T3 分别点亮 1/2/3 段弧 */
+    var tier = s.comboTier || 0, cf = clamp(s.comboFlash || 0, 0, 1);
+    if (tier > 0) {
+      ctx.lineWidth = 3.4;
+      for (var n = 0; n < tier; n++) {
+        ctx.strokeStyle = rgba(col.amber, 0.5 + 0.4 * cf);
+        ctx.beginPath();
+        ctx.arc(0, 0, p.r + 20 + n * 7, -Math.PI / 2 + n * 0.35,
+                -Math.PI / 2 + n * 0.35 + Math.PI * 1.25);
+        ctx.stroke();
+      }
+      ctx.font = '700 11px ui-monospace, Consolas, monospace';
+      ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+      ctx.fillStyle = col.amber;
+      ctx.fillText('COMBO T' + tier + ' · ×' + (s.combo || 0), 0, p.r + 24 + tier * 7);
+    }
+    /* 当前所处地效贴在脚下：不看 HUD 也知道为什么这一下变快 / 变慢 */
+    var tb = f.tileBuff;
+    if (tb && tb.kind !== 'none') {
+      ctx.font = '500 9px ui-monospace, Consolas, monospace';
+      ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+      ctx.fillStyle = tb.kind === 'good' ? col.guide : col.rust;
+      ctx.fillText(tb.label.toUpperCase(), 0, p.r + 38 + tier * 7);
+    }
+    ctx.restore();
+    if (ch.stall > 0 && !CUR.paper) {
+      ctx.save();
+      ctx.globalAlpha = clamp(ch.stall / Q.stallTime, 0, 1) * 0.9;
+      ctx.font = '600 11px ui-monospace, Consolas, monospace';
+      ctx.textAlign = 'left'; ctx.textBaseline = 'top';
+      ctx.fillStyle = col.fold;
+      ctx.fillText('CHRONO / WORLD ' + Q.stallScale.toFixed(2) + 'x · PLAYER 1.00x', 26, 34);
+      ctx.restore();
+    }
   }
 
   /* ---------- 后处理：VISUALS.postFx 真正接线 ---------- */
@@ -1287,7 +1485,15 @@
     ctx.fillText(fr.code + ' / ' + fr.name, m + c + 14, m - 4);
     ctx.textAlign = 'right';
     var tag = '';
-    if (s && s.loop) {
+    if (s && s.free) {
+      tag = 'LAYER ' + (s.free.layer || 1) + ' · ROOM ' + ((s.free.roomInLayer || 0) + 1) +
+        ' · LOOP ' + (s.free.closures || 0);
+      var fb = shieldBoss(s);
+      if (fb) tag += ' · SHIELD P' + fb.shield.spec.phase + '/' + fb.shield.spec.requiredLabel +
+        ' [' + fb.shield.state.toUpperCase() + ']';
+      if (s.chrono && s.chrono.stall > 0)
+        tag += ' · CHRONO ' + C.core.perks.BALANCE.chrono.stallScale.toFixed(2) + 'x';
+    } else if (s && s.loop) {
       tag = 'LAYER ' + (s.loop.layer || 1) + ' · ROOM ' + ((s.loop.roomInLayer || 0) + 1) +
         ' · LOOP ' + ((s.recall && s.recall.loops) || 0);
       var sb = shieldBoss(s);
@@ -1321,6 +1527,7 @@
     }
     ctx.save();
     drawBackground(ctx, t);
+    if (s.free) drawFreeTiles(ctx, s, t);
     if (s.shake > 0 && !direction) {
       ctx.translate(Math.sin(t * 135) * s.shake * 0.5, Math.cos(t * 151) * s.shake * 0.5);
     }
@@ -1328,17 +1535,19 @@
     if (s.recall) drawRecallPaths(ctx, s, t);
     if (s.impact && s.impact.trial) drawTrialWarnings(ctx, s);
     drawWalls(ctx, s);
+    if (s.free) drawFreePath(ctx, s, t);
     if (s.recall) drawRecallHubs(ctx, s, t);
     if (s.impact) drawImpactCorridor(ctx, s.impact);
-    else drawExit(ctx, s, t);
+    else if (!s.free) drawExit(ctx, s, t);
     drawParticles(ctx, s);
     drawTrail(ctx, s);
     if (s.impact) drawImpactTrails(ctx, s);
     s.enemies.forEach(function (e) { drawEnemy(ctx, e, t); });
-    if (s.loop) drawBossShield(ctx, s, t);
+    if (s.loop || s.free) drawBossShield(ctx, s, t);
     drawBullets(ctx, s);
     if (s.impact) drawImpactActions(ctx, s.impact);
     drawPlayer(ctx, s, t);
+    if (s.free) drawFreeDodge(ctx, s, t);
     drawCombatGuide(ctx, s, cue === undefined ? C.ui.combatGuide.get(s) : cue);
     ctx.restore();
 
@@ -1352,8 +1561,8 @@
     }
 
     drawDamagePops(ctx, s);
-    if (s.loop) drawClosure(ctx, s, t);
-    if (s.loop) drawBreakBurst(ctx, s, t);
+    if (s.loop || s.free) drawClosure(ctx, s, t);
+    if (s.loop || s.free) drawBreakBurst(ctx, s, t);
     if (s.bossPhase === 2) drawBossPhase(ctx, s, t);
     drawPostFx(ctx, s, t);
     drawFrame(ctx, s, t);

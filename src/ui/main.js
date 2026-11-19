@@ -7,7 +7,7 @@
   var canvas, ctx;
   var engine, render, screens, audio;
   var last = 0, clock = 0, battleClock = 0, paused = false, starting = false;
-  var input = { up: false, down: false, left: false, right: false, fire: false, dash: false, aimX: null, aimY: null };
+  var input = { up: false, down: false, left: false, right: false, fire: false, dash: false, arm: false, aimX: null, aimY: null };
   var held = {};
 
   function resize() {
@@ -31,6 +31,7 @@
     input.left = !!(held.a || held.arrowleft);
     input.right = !!(held.d || held.arrowright);
     input.dash = !!held.shift;
+    input.arm = !!held.e;
     input.fire = !!held.mouse || !!held[' '] || !!held.j;
   }
 
@@ -118,6 +119,11 @@
     switch (type) {
       case 'runStart':
         screens.show(null);
+        if (p.free) {
+          screens.toast(p.continued ? ('续玩 · 第 ' + p.layer + ' 层') :
+            ('自由回廊 · 按 E 定起点，绕一圈回到起点'), 3200);
+          break;
+        }
         if (p.loop) {
           screens.toast(p.continued ? ('续玩 · 第 ' + p.layer + ' 层') :
             ('回廊长局 · 第 ' + p.layer + ' 层 · 从另一边回来'), 3000);
@@ -128,6 +134,27 @@
         break;
       case 'loopClosed':
         if (p.streak > 1) screens.toast('连扫 ×' + p.streak + (p.heal ? ' · 归廊 +' + p.heal + ' 生命' : ''), 1500);
+        break;
+      /* M11：自由回扫 / 凝滞 / 完美闪避 / 地效 / 连段的界面反馈。
+       * 首领房的破盾 toast 由 M9 五个 case 独占，这里不插嘴。 */
+      case 'freeArm':
+        screens.toast('起点已定 · 绕一圈，回到这里兑现', 1800);
+        break;
+      case 'freeReject':
+        screens.toast('圈太小 · 走近一点再绕（面积 ' + p.area + '）', 1600);
+        break;
+      case 'perfectDodge':
+        if (p.kind === 'perfect') screens.toast('完美闪避 · 增伤 + 冷却缩减', 1400);
+        else if (p.kind === 'normal') screens.toast('闪避 · 削弱版增益', 1000);
+        break;
+      case 'tileEnter':
+        screens.toast(p.kind === 'good' ? ('增幅格 · ' + p.label) : ('滞涩格 · ' + p.label), 1100);
+        break;
+      case 'chargeWarning':
+        screens.toast('冲锋预警 · 现在闪避可触发完美闪避', 900);
+        break;
+      case 'comboTier':
+        screens.toast('连段 ×' + p.combo + ' · 等级 ' + p.tier, 1200);
         break;
       /* M10：闭环兑现反馈。首领房有 M9 的五个护盾 toast，这里主动让位避免刷屏；
        * 普通房按 1.5 秒节流播报圈型 / 长度 / 连扫倍率 / 下圈回扫伤害。 */
@@ -238,6 +265,7 @@
 
   function restart() {
     var s = engine.getState();
+    if (s && s.free) return begin({ free: true });
     if (s && s.loop) return begin({ loop: true });
     if (s && s.impact) return begin({
       impactWeapon: s.impact.weapon, impactCombinations: s.impact.combinations, impactTrial: s.impact.trial
@@ -295,6 +323,8 @@
 
     screens.init({
       onStart: begin,
+      onFree: function () { begin({ free: true }); },
+      onFreeContinue: function () { begin({ free: true, continueRun: true }); },
       onLoop: function () { begin({ loop: true }); },
       onLoopContinue: function () { begin({ loop: true, continueRun: true }); },
       onRecall: function (variant) { begin({ prototype: variant }); },

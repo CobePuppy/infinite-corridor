@@ -60,10 +60,10 @@
 
         <div class="home-modes" aria-label="战斗模式">
           <button id="btn-loop" class="mode-entry featured" type="button">
-            <span><b>回廊长局</b><small>三层回廊 · 绕一圈，从另一侧回击 · 层末存档续玩</small></span><span aria-hidden="true">→</span>
+            <span><b>自由回廊</b><small>自己选起点 · 用走过的路圈住敌人 · 凝滞 / 完美闪避 / 地效</small></span><span aria-hidden="true">→</span>
           </button>
           <button id="btn-loop-continue" class="mode-entry continue hidden" type="button">
-            <span><b>继续回廊</b><small>从上次离开的廊口接着走</small></span><span aria-hidden="true">→</span>
+            <span><b>继续回廊</b><small>从上次离开的圈接着走</small></span><span aria-hidden="true">→</span>
           </button>
           <button id="btn-trial-setup" class="mode-entry" type="button">
             <span><b>单房试玩</b><small>两拨连续战斗，出发前选武器与设置</small></span><span aria-hidden="true">→</span>
@@ -88,6 +88,9 @@
               </label>
               <button id="btn-recall" class="btn secondary" type="button">廊道回扫</button>
             </div>
+            <div class="mode-group">
+              <button id="btn-loop-classic" class="btn secondary" type="button">经典回廊（旧版可回退）</button>
+            </div>
           </div>
         </div>
 
@@ -95,7 +98,7 @@
           <div id="theme-host"></div>
           <button id="btn-unlock-start" class="btn link-button" type="button">局外解锁 ↗</button>
         </div>
-        <div class="controls-inline"><span><kbd>WASD</kbd> 移动</span><span><kbd>左键</kbd> 攻击</span><span><kbd>Shift</kbd> 冲刺</span><span><kbd>Esc</kbd> 暂停</span></div>
+        <div class="controls-inline"><span><kbd>WASD</kbd> 移动</span><span><kbd>左键</kbd> 攻击</span><span><kbd>Shift</kbd> 冲刺</span><span><kbd>E</kbd> 定起点</span><span><kbd>Esc</kbd> 暂停</span></div>
       </section>
 
       <section id="screen-trial" class="panel trial-panel hidden" tabindex="-1" aria-labelledby="trial-title">
@@ -176,6 +179,8 @@
 <script src="src/core/audio.js"></script>
 <script src="src/core/recall.js"></script>
 <script src="src/core/loop.js"></script>
+<script src="src/core/chrono.js"></script>
+<script src="src/core/freewave.js"></script>
 <script src="src/core/enemy-trial.js"></script>
 <script src="src/core/impact.js"></script>
 <script src="src/core/engine.js"></script>
