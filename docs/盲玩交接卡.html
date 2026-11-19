@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>∞ 回廊 · 试玩交接卡</title>
+<style>
+  :root{
+    --ink:#18202B; --muted:#5A6675; --line:#D8DEE6; --accent:#1F7A63;
+    --paper:#FFFFFF; --soft:#F4F7F6;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0}
+  body{
+    background:#EDF1F0;color:var(--ink);
+    font-family:"PingFang SC","Microsoft YaHei","Hiragino Sans GB",system-ui,sans-serif;
+    -webkit-font-smoothing:antialiased;
+    display:flex;justify-content:center;padding:24px 12px;
+  }
+  .sheet{
+    width:210mm;min-height:297mm;background:var(--paper);
+    padding:20mm 18mm;box-shadow:0 12px 40px rgba(20,30,40,.14);
+    display:flex;flex-direction:column;
+  }
+  .brand{display:flex;align-items:baseline;gap:10px;border-bottom:1px solid var(--line);padding-bottom:10px}
+  .brand .inf{font-size:26px;line-height:1;color:var(--accent)}
+  .brand .en{font-family:ui-monospace,Consolas,monospace;font-size:10px;letter-spacing:3px;color:var(--muted)}
+  .brand .tag{margin-left:auto;font-size:11px;color:var(--muted)}
+  h1{font-size:26px;font-weight:600;margin:26px 0 6px;letter-spacing:1px}
+  .lead{font-size:13px;line-height:1.9;color:var(--muted);margin:0 0 22px}
+  .hint{
+    background:var(--soft);border-left:4px solid var(--accent);
+    padding:18px 22px;margin:0 0 26px;
+  }
+  .hint .k{font-size:11px;letter-spacing:2px;color:var(--accent);margin:0 0 8px}
+  .hint .v{font-size:22px;font-weight:600;letter-spacing:2px;margin:0}
+  h2{font-size:14px;font-weight:600;margin:0 0 10px;letter-spacing:.5px;
+     display:flex;align-items:center;gap:8px}
+  h2::before{content:"";width:18px;height:2px;background:var(--accent);display:inline-block}
+  section{margin-bottom:22px}
+  .path{font-family:ui-monospace,Consolas,monospace;font-size:12px;background:var(--soft);
+        border:1px solid var(--line);border-radius:6px;padding:10px 12px;word-break:break-all}
+  ol,ul{margin:0;padding-left:20px}
+  li{font-size:13px;line-height:2;color:var(--ink)}
+  li span{color:var(--muted)}
+  .keys{display:grid;grid-template-columns:1fr 1fr;gap:8px 16px;margin-top:6px}
+  .keys div{font-size:13px;display:flex;align-items:center;gap:10px}
+  kbd{font-family:ui-monospace,Consolas,monospace;font-size:11px;min-width:64px;text-align:center;
+      padding:5px 8px;border:1px solid var(--line);border-bottom-width:2px;border-radius:5px;
+      background:var(--soft);color:var(--ink)}
+  .q{font-size:13px;line-height:1.9;margin:0 0 8px;padding-left:14px;position:relative}
+  .q::before{content:"·";position:absolute;left:0;color:var(--accent);font-weight:700}
+  .foot{margin-top:auto;border-top:1px solid var(--line);padding-top:14px;
+        font-size:11px;line-height:1.9;color:var(--muted)}
+  .foot b{color:var(--ink)}
+  .blank{height:26px;border-bottom:1px dashed var(--line);margin-top:8px}
+  @media print{
+    body{background:#fff;padding:0}
+    .sheet{width:auto;min-height:auto;box-shadow:none;padding:16mm 14mm}
+    @page{size:A4;margin:0}
+  }
+</style>
+</head>
+<body>
+<div class="sheet">
+
+  <div class="brand">
+    <span class="inf">∞</span><span class="en">INFINITE CORRIDOR</span>
+    <span class="tag">试玩交接卡 · 请全程带着这张纸</span>
+  </div>
+
+  <h1>谢谢你来试玩</h1>
+  <p class="lead">
+    接下来大约 10 分钟，我们会保持安静，也不会指路——不是冷淡，是为了不干扰你自己的判断。<br>
+    卡住、走错、打不中都没关系，<b>按你觉得对的来就行</b>。请不要搜资料，也不要问旁边的人。
+  </p>
+
+  <div class="hint">
+    <p class="k">唯一提示</p>
+    <p class="v">从另一边回来。</p>
+  </div>
+
+  <section>
+    <h2>怎么开始</h2>
+    <ol>
+      <li>双击打开主持人给你的文件（<span>也可以直接双击下面这个路径</span>）：</li>
+    </ol>
+    <div class="path">D:/SrcCode/Competition/corridor/index.html</div>
+    <ol start="2" style="margin-top:10px">
+      <li>在首页点 <b>「廊道回扫」</b>，站位选主持人告诉你的 <b>A</b> 或 <b>B</b>。</li>
+      <li>看到画面就可以动了，<b>不需要等口令</b>。</li>
+    </ol>
+  </section>
+
+  <section>
+    <h2>操作</h2>
+    <div class="keys">
+      <div><kbd>W A S D</kbd> 移动</div>
+      <div><kbd>鼠标</kbd> 瞄准</div>
+      <div><kbd>左键</kbd> 攻击</div>
+      <div><kbd>Shift</kbd> 冲刺</div>
+      <div><kbd>Esc</kbd> 暂停</div>
+      <div><kbd>空格 / J</kbd> 也可攻击</div>
+    </div>
+  </section>
+
+  <section>
+    <h2>结束后会问你三个问题</h2>
+    <p class="lead" style="margin-bottom:10px">现在不用想答案，照常玩就好；结束时凭印象说就行，没有对错。</p>
+    <p class="q">刚才那一下，你是怎么走过去的？</p>
+    <p class="q">你觉得为什么打中了那一个，而不是别的？</p>
+    <p class="q">如果再来一圈，你会换个走法吗？为什么？</p>
+  </section>
+
+  <div class="foot">
+    <b>试玩编号（主持人填）：</b>
+    <div class="blank"></div>
+    <div style="margin-top:12px">
+      全程只录游戏窗口，不录脸、不录个人信息。你的记录只用代号保存。
+    </div>
+  </div>
+
+</div>
+</body>
+</html>

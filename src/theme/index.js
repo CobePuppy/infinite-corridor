@@ -2,13 +2,19 @@
  * geometry 为默认主题；oldtown / subject / wudang 三套词表与 geometry 完全同构，
  * 供 gen/templates.js 的 reseed() 按「geometry 索引 → 当前词表同索引项」重映射名称。
  *
- * ── 视觉层契约（M4 / T26-A）──────────────────────────────────────────
+ * ── 视觉层契约（M8 美术大改）────────────────────────────────────────
  *   · PALETTES：四套主题各自独立的 5-token 色板（token ∈ ink/amber/teal/violet/rust）。
- *     与 gen/schema.js 的 ENUM.color_token 一一对应，几何色板即 M1 的 COLORS。
- *   · VISUALS：每套主题的命名构图 / 造型 / 粒子风格标识 + 程序化后处理参数。
+ *     与 gen/schema.js 的 ENUM.color_token 一一对应。整套画面由色板驱动，不再由
+ *     render.js 里的硬编码常量主导，四套主题的差异因此是「整幅画面」而非网格间距。
+ *   · VISUALS：每套主题的材质与后处理配置，全部字段都真的被 render.js 读取：
+ *       bgStyle / enemyStyle / particleStyle —— 造型分流标识
+ *       ground  —— 网格步长 / 主线间隔 / 底纹母题 / 线强度
+ *       frame   —— 图廓编号与题名（测绘档案感）
+ *       glow    —— 发光倍率
+ *       postFx  —— bloom / grain / vignette / halo / shock 强度
  *     全部是「命名素材 / 配色 / 视觉参数」，不含任何规则、伤害或结算数值（不变量）。
- *   · C.theme.palette(id, token) → 色值字符串；C.theme.visual(id) →
- *     { palette, bgStyle, enemyStyle, particleStyle, postFx }；未知 id 一律回落 geometry。
+ *   · C.theme.palette(id, token) → 色值字符串；C.theme.visual(id) → 上述对象；
+ *     未知 id 一律回落 geometry。
  *   · 旧接口 color / COLORS / COLOR_TOKENS / get / readyIds / active / setActive /
  *     randomSummary / THEMES 一律保留且行为兼容；color(token) 按 geometry 色板取值。
  *   · vocab 键集合与四套词表保持原样（m2m3.js 校验同构性，禁止增删键）。
@@ -16,39 +22,45 @@
 (function (C) {
   'use strict';
 
-  /* ---------- 四套独立色板（命名素材：配色） ---------- */
+  /* ---------- 四套独立色板 ----------
+   * 统一到「深墨底 + 单一强强调色」的测绘图语言：
+   *   amber = 唯一高亮（玩家 / 闭环 / 主按钮 / 图廓读数）
+   *   teal  = 路径与可走区域
+   *   rust  = 危险与首领
+   *   violet= 远程 / 次级信息
+   * 四套只调整色相与明度，不换语义，保证「同一套仪器、四种材质」。 */
   var PALETTES = {
-    /* geometry · 冷调几何：沿用 M1 原值，高饱和冷青 + 明琥珀 / 紫 / 锈红 */
+    /* geometry · 精密坐标网：墨蓝 + 琥珀金 + 雾青，冷净、无杂色 */
     geometry: {
-      ink:    '#141821',
-      amber:  '#E9A23B',
-      teal:   '#39C6A5',
-      violet: '#8E7CE8',
-      rust:   '#D9644B'
+      ink:    '#0A1018',
+      amber:  '#E9B44C',
+      teal:   '#5FD3C4',
+      violet: '#A99BE8',
+      rust:   '#E4584A'
     },
-    /* oldtown · 潮湿市井暖光：灯橘为主，苔绿 / 藕紫 / 砖红低饱和，整体偏暖褐 */
+    /* oldtown · 潮湿砖巷：暖灯橘、苔青、藕紫、砖红，整体偏赭 */
     oldtown: {
-      ink:    '#1A1410',
-      amber:  '#F2A63C',
-      teal:   '#78A88E',
-      violet: '#A5818C',
-      rust:   '#C25736'
+      ink:    '#14100C',
+      amber:  '#EFA847',
+      teal:   '#8CB79C',
+      violet: '#B98D94',
+      rust:   '#D4643F'
     },
-    /* subject · 清冷学理：钢笔冷蓝为主，粉笔黄 / 靛紫 / 批注红克制内敛 */
+    /* subject · 方格纸与钢笔：冷蓝、粉笔黄、靛紫、批注红 */
     subject: {
-      ink:    '#101820',
-      amber:  '#D8B06A',
-      teal:   '#5FA6C9',
-      violet: '#7E88C8',
-      rust:   '#B45E58'
+      ink:    '#0B121B',
+      amber:  '#D8C07C',
+      teal:   '#6FA9CB',
+      violet: '#9098D6',
+      rust:   '#C46C63'
     },
-    /* wudang · 山岚留白：淡墨青灰，灰青 / 远山紫霭 / 朱砂皆低饱和，留白感 */
+    /* wudang · 墨晕山岚：灰青、淡金、远山紫霭、朱砂 */
     wudang: {
-      ink:    '#232A2C',
-      amber:  '#C9A579',
-      teal:   '#6F9C8D',
-      violet: '#8E8CAA',
-      rust:   '#A96357'
+      ink:    '#161C1E',
+      amber:  '#CBA77E',
+      teal:   '#7FA99A',
+      violet: '#9C99B6',
+      rust:   '#B26C5E'
     }
   };
 
@@ -56,39 +68,47 @@
   var COLORS = PALETTES.geometry;
   var COLOR_TOKENS = Object.keys(COLORS);
 
-  /* ---------- 四套视觉配置（命名素材 + 程序化绘制/后处理参数） ----------
-   * bgStyle / enemyStyle / particleStyle：render.js 用来分流的命名标识。
-   * postFx：后处理强度系数（bloom 发光 / aberration 色差 / grain 噪点 /
-   *   halo 动态光晕 / vignette 暗角 / shock 冲击波），纯视觉参数，非规则数值。
-   * 四套的构图、造型、粒子、后处理强度刻意拉开，保证视觉真正不同。 */
+  /* ---------- 四套视觉配置（全部字段都会被 render.js 读取） ---------- */
   var VISUALS = {
     geometry: {
       palette: PALETTES.geometry,
-      bgStyle: 'grid-arcs',        /* 细网格 + 对称弧线 */
-      enemyStyle: 'geometric',     /* 硬边多边形 / 细描边 */
-      particleStyle: 'shard',      /* 方形碎片 */
-      postFx: { bloom: 0.16, aberration: 1.1, grain: 0.012, halo: 0.05, vignette: 0.30, shock: 0.85 }
+      bgStyle: 'survey-grid',       /* 精密等距网 + 同心圆刻度 + 角标 */
+      enemyStyle: 'geometric',      /* 硬边多边形 / 双描边 */
+      particleStyle: 'shard',       /* 方形碎片 */
+      ground: { step: 40, major: 5, motif: 'rings', line: 0.075 },
+      frame: { code: 'ATLAS 00', name: '抽象几何', ticks: true },
+      glow: 1,
+      postFx: { bloom: 0.22, grain: 0.014, vignette: 0.34, halo: 0.08, shock: 0.90 }
     },
     oldtown: {
       palette: PALETTES.oldtown,
-      bgStyle: 'noisy-bricks',     /* 颗粒噪点 + 暖光晕 + 横竖砖缝 */
-      enemyStyle: 'lantern',       /* 圆润灯笼 / 暖光晕 */
-      particleStyle: 'ember',      /* 暖色圆点火星 */
-      postFx: { bloom: 0.34, aberration: 0.5, grain: 0.055, halo: 0.24, vignette: 0.44, shock: 1.15 }
+      bgStyle: 'rain-bricks',       /* 错缝砖纹 + 暖灯晕 + 雨痕 */
+      enemyStyle: 'lantern',        /* 圆润灯笼 / 暖光晕 */
+      particleStyle: 'ember',       /* 暖色火星 */
+      ground: { step: 44, major: 4, motif: 'brick', line: 0.065 },
+      frame: { code: 'ATLAS 01', name: '旧城', ticks: true },
+      glow: 1.35,
+      postFx: { bloom: 0.38, grain: 0.055, vignette: 0.46, halo: 0.26, shock: 1.10 }
     },
     subject: {
       palette: PALETTES.subject,
-      bgStyle: 'formula-ticks',    /* 公式网格 + 刻度线 */
-      enemyStyle: 'academic',      /* 规整方 / 圆 + 标注角 */
-      particleStyle: 'dot',        /* 细小圆点 / 粉笔末 */
-      postFx: { bloom: 0.09, aberration: 1.6, grain: 0.008, halo: 0.03, vignette: 0.24, shock: 0.65 }
+      bgStyle: 'formula-paper',     /* 方格纸 + 装订线 + 刻度 */
+      enemyStyle: 'academic',       /* 规整方 / 圆 + 标注角 */
+      particleStyle: 'dot',         /* 细小圆点 / 粉笔末 */
+      ground: { step: 28, major: 5, motif: 'paper', line: 0.085 },
+      frame: { code: 'ATLAS 02', name: '学科', ticks: true },
+      glow: 0.75,
+      postFx: { bloom: 0.12, grain: 0.010, vignette: 0.26, halo: 0.05, shock: 0.70 }
     },
     wudang: {
       palette: PALETTES.wudang,
-      bgStyle: 'ink-wash',         /* 留白渐变 + 柔和墨迹弧 */
-      enemyStyle: 'taiji',         /* 柔圆 / 阴阳弧 */
-      particleStyle: 'petal',      /* 柔和墨瓣 */
-      postFx: { bloom: 0.13, aberration: 0.35, grain: 0.02, halo: 0.14, vignette: 0.18, shock: 0.55 }
+      bgStyle: 'ink-wash',          /* 墨晕山形 + 云纹弧 + 留白 */
+      enemyStyle: 'taiji',          /* 柔圆 / 阴阳弧 */
+      particleStyle: 'petal',       /* 柔和墨瓣 */
+      ground: { step: 48, major: 4, motif: 'ink', line: 0.055 },
+      frame: { code: 'ATLAS 03', name: '武当', ticks: true },
+      glow: 0.95,
+      postFx: { bloom: 0.18, grain: 0.022, vignette: 0.22, halo: 0.18, shock: 0.60 }
     }
   };
 

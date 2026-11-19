@@ -49,6 +49,11 @@
     g.combo = 0;
     g.comboTime = 0;
     s.player.fireCd = 0;
+    if (g.trial) {
+      g.trial.hint = null;
+      s.enemies = C.core.enemyTrial.spawn(s, wave, game);
+      return;
+    }
     var layout = g.combinations ? COMBINATION_WAVES : WAVES;
     var health = g.combinations ? K : B;
     s.enemies = layout[wave - 1].map(function (spot, id) {
@@ -71,9 +76,9 @@
     });
   }
 
-  function start(s, weapon, combinations, game) {
+  function start(s, weapon, combinations, trial, game) {
     s.impact = {
-      weapon: weapon, combinations: combinations, perk: null, points: 0, bestChain: 0,
+      weapon: weapon, combinations: combinations, trial: trial, perk: null, points: 0, bestChain: 0,
       contacts: new Set()
     };
     s.player.x = 144;
@@ -146,7 +151,8 @@
       time: time, chain: chain, reflected: !!(previous && previous.reflected),
       effect: previous ? previous.effect : null
     };
-    if (e.charger && e.mode !== 'cool') {
+    if (e.brain) C.core.enemyTrial.interrupt(e);
+    else if (e.charger && e.mode !== 'cool') {
       e.mode = 'cool';
       e.timer = K.chargeRecovery;
     }
@@ -166,15 +172,18 @@
     game.burst(s, e.x, e.y, kind === 'relay' ? '#E9A23B' : '#39C6A5', kind === 'relay' ? 7 : 3, 115);
   }
 
-  function selectEffect(e, dx, dy) {
+  function selectEffect(g, e, dx, dy) {
+    if (!g.combinations || (g.trial && g.trial.preset !== 'skills')) return null;
     if (e.flight) {
       if (e.flight.effect) return null;
       var dot = (e.vx * dx + e.vy * dy) / (Math.hypot(e.vx, e.vy) || 1);
-      if (!e.flight.reflected && dot >= K.sameDirection) return 'straight';
+      if (!g.trial && !e.flight.reflected && dot >= K.sameDirection) return 'straight';
       if (e.flight.reflected && Math.abs(dot) <= K.sideDirection) return 'fold';
       return null;
     }
-    if (e.charger && (e.mode === 'wind' || e.mode === 'charge') &&
+    var charging = e.brain ? e.brain.role === 'charge' && e.brain.attack :
+      e.charger && (e.mode === 'wind' || e.mode === 'charge');
+    if (charging &&
         Math.abs(e.lockX * dx + e.lockY * dy) <= K.sideDirection) return 'borrow';
     return null;
   }
@@ -184,13 +193,16 @@
     var w = B[g.weapon];
     var redirect = !!e.flight;
     var speed = redirect ? w.redirect : w.speed;
-    var effect = g.combinations && explicit ? selectEffect(e, dx, dy) : null;
-    if (effect === 'borrow' && e.mode === 'charge') speed += Math.hypot(e.vx, e.vy) * K.borrowCarry;
+    var effect = explicit ? selectEffect(g, e, dx, dy) : null;
+    if (effect === 'borrow' && (e.brain ? e.brain.state === 'attack' : e.mode === 'charge')) {
+      speed += Math.hypot(e.vx, e.vy) * K.borrowCarry;
+    }
     if (!redirect && g.perk === 'p_impact_heavy') speed *= B.heavyMultiplier;
     var chain = redirect ? e.flight.chain : { targets: new Set() };
     launch(s, e, dx, dy, speed, w.damage, chain, redirect ? 'redirect' : 'direct', game);
     if (effect) {
       e.flight.effect = { kind: effect, dx: dx, dy: dy };
+      if (g.trial) mark(g, 'confirm', e.x, e.y, dx, dy);
       sound('impactArm', effect);
     }
     if (g.awakeAt === Infinity) g.awakeAt = s.elapsed + B.firstGrace;
@@ -206,9 +218,16 @@
     }
   }
 
+  function inSwing(walls, e, x, y, dx, dy, reached) {
+    var w = B.blade;
+    var ex = e.x - x, ey = e.y - y;
+    var len = Math.hypot(ex, ey);
+    if (len > w.range + e.r + reached || (ex * dx + ey * dy) < len * Math.cos(w.halfArc)) return false;
+    return !len || !castWall(walls, x, y, ex / len, ey / len, len);
+  }
+
   function swing(s, dx, dy, explicit, game) {
     var g = s.impact, p = s.player;
-    var w = B.blade;
     var x = p.x, y = p.y;
     lunge(p, dx, dy, B.lunge, game);
     var reached = (p.x - x) * dx + (p.y - y) * dy;
@@ -216,15 +235,43 @@
     sound('impactSwing');
     var redirected = false;
     s.enemies.forEach(function (e) {
-      var ex = e.x - x, ey = e.y - y;
-      var len = Math.hypot(ex, ey);
-      if (len > w.range + e.r + reached || (ex * dx + ey * dy) < len * Math.cos(w.halfArc)) return;
-      if (len && castWall(s.walls, x, y, ex / len, ey / len, len)) return;
+      if (!inSwing(s.walls, e, x, y, dx, dy, reached)) return;
       if (strike(s, e, dx, dy, explicit, game)) redirected = true;
     });
     if (redirected && g.perk === 'p_impact_pursuit') {
       lunge(p, dx, dy, B.pursuitStep, game);
       p.dashCd = 0;
+    }
+  }
+
+  function rayTargets(enemies, x, y, dx, dy, limit) {
+    return enemies.map(function (e) {
+      return { enemy: e, distance: rayEnemy(x, y, dx, dy, e) };
+    }).filter(function (target) {
+      return target.distance < limit;
+    }).sort(function (a, b) { return a.distance - b.distance; });
+  }
+
+  function updateTrialHint(s) {
+    var g = s.impact, p = s.player;
+    var trial = g.trial;
+    trial.hint = null;
+    if (trial.preset !== 'skills' || p.fireCd > B.inputBuffer) return;
+    var dx = Math.cos(p.angle), dy = Math.sin(p.angle);
+    var candidates;
+    if (g.weapon === 'blade') {
+      var reached = C.core.enemyTrial.wallLimit(s.walls, p.x, p.y, dx, dy, B.lunge, p.r);
+      candidates = s.enemies.filter(function (e) { return inSwing(s.walls, e, p.x, p.y, dx, dy, reached); });
+    } else {
+      var wall = castWall(s.walls, p.x, p.y, dx, dy, B.cannon.range);
+      var targets = rayTargets(s.enemies, p.x, p.y, dx, dy, wall ? wall.distance : B.cannon.range);
+      candidates = targets.length ? [targets[0].enemy] : [];
+    }
+    for (var i = 0; i < candidates.length; i++) {
+      var effect = selectEffect(g, candidates[i], dx, dy);
+      if (!effect) continue;
+      trial.hint = { effect: effect, enemy: candidates[i] };
+      break;
     }
   }
 
@@ -239,11 +286,7 @@
     for (var i = 0; i < legs && range > EPS; i++) {
       var wall = castWall(s.walls, x, y, dx, dy, range);
       var limit = wall ? wall.distance : range;
-      var targets = s.enemies.map(function (e) {
-        return { enemy: e, distance: rayEnemy(x, y, dx, dy, e) };
-      }).filter(function (target) {
-        return target.distance < limit;
-      }).sort(function (a, b) { return a.distance - b.distance; });
+      var targets = rayTargets(s.enemies, x, y, dx, dy, limit);
       targets.slice(0, hits).forEach(function (target) { strike(s, target.enemy, dx, dy, explicit, game); });
       if (targets.length >= hits) {
         limit = targets[hits - 1].distance;
@@ -326,6 +369,8 @@
     var p = s.player;
     if (e.flight) {
       moveFlight(s, e, dt, game);
+    } else if (e.brain) {
+      C.core.enemyTrial.advance(s, e, dt, game);
     } else if (e.charger) {
       advanceCharger(s, e, dt, game);
     } else if (e.hp > 0 && s.elapsed >= s.impact.awakeAt) {
@@ -341,11 +386,12 @@
   }
 
   function foldImpact(s, target, effect, speed, chain, game) {
+    var radius = s.impact.trial ? B.trial.foldRadius : K.foldRadius;
     s.enemies.forEach(function (e) {
       if (chain.targets.has(e)) return;
       var dx = e.x - target.x, dy = e.y - target.y;
       var gap = Math.hypot(dx, dy);
-      if (!gap || gap > K.foldRadius || castWall(s.walls, target.x, target.y, dx / gap, dy / gap, gap)) return;
+      if (!gap || gap > radius || castWall(s.walls, target.x, target.y, dx / gap, dy / gap, gap)) return;
       var side = effect.dx * dy - effect.dy * dx;
       var angle = Math.atan2(effect.dy, effect.dx) + (side >= 0 ? K.foldAngle : -K.foldAngle);
       launch(s, e, Math.cos(angle), Math.sin(angle), speed * K.foldSpeed,
@@ -387,10 +433,17 @@
         if (gap > sum + EPS) continue;
         var nx = gap ? dx / gap : 1, ny = gap ? dy / gap : 0;
         var push = Math.max(0, sum - gap) / 2;
-        a.x -= nx * push; a.y -= ny * push;
-        b.x += nx * push; b.y += ny * push;
-        game.collideWalls(a, a.r);
-        game.collideWalls(b, b.r);
+        var anchoredA = a.brain && a.brain.attack, anchoredB = b.brain && b.brain.attack;
+        if (!anchoredA) {
+          var pushA = anchoredB ? push * 2 : push;
+          a.x -= nx * pushA; a.y -= ny * pushA;
+          game.collideWalls(a, a.r);
+        }
+        if (!anchoredB) {
+          var pushB = anchoredA ? push * 2 : push;
+          b.x += nx * pushB; b.y += ny * pushB;
+          game.collideWalls(b, b.r);
+        }
         var key = a.impactId + ':' + b.impactId;
         touching.add(key);
         var fresh = !g.contacts.has(key);
@@ -410,6 +463,7 @@
     e.flight = null;
     e.vx = 0;
     e.vy = 0;
+    if (e.brain && e.hp > 0) C.core.enemyTrial.land(e);
     if (e.hp === 0) {
       e.dead = true;
       s.kills++;
@@ -437,13 +491,17 @@
     var steps = Math.ceil(dt / STEP);
     var step = dt / steps;
     for (var i = 0; i < steps && s.phase === 'playing'; i++) {
+      if (g.trial) g.trial.waveTime += step;
       s.enemies.forEach(function (e) { advanceEnemy(s, e, step, game); });
       if (s.phase !== 'playing') return;
       resolvePairs(s, game);
       s.enemies.forEach(function (e) { land(s, e); });
       s.enemies = s.enemies.filter(function (e) { return !e.dead; });
     }
-    if (s.enemies.length) return;
+    if (s.enemies.length) {
+      if (g.trial) updateTrialHint(s);
+      return;
+    }
     if (g.wave === 2) game.finishRun(s, true);
     else if (g.combinations) {
       spawnWave(s, 2, game);

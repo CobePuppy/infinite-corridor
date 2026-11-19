@@ -6,7 +6,7 @@
 
   var canvas, ctx;
   var engine, render, screens, audio;
-  var last = 0, clock = 0, paused = false;
+  var last = 0, clock = 0, battleClock = 0, paused = false, starting = false;
   var input = { up: false, down: false, left: false, right: false, fire: false, dash: false, aimX: null, aimY: null };
   var held = {};
 
@@ -32,6 +32,12 @@
     input.right = !!(held.d || held.arrowright);
     input.dash = !!held.shift;
     input.fire = !!held.mouse || !!held[' '] || !!held.j;
+  }
+
+  function clearInput() {
+    held = {};
+    syncInput();
+    input.attackPressed = false;
   }
 
   /* ---------- T27-C：主题 data 属性 ---------- */
@@ -110,8 +116,19 @@
     switch (type) {
       case 'runStart':
         screens.show(null);
+        if (p.loop) {
+          screens.toast(p.continued ? ('续玩 · 第 ' + p.layer + ' 层') :
+            ('回廊长局 · 第 ' + p.layer + ' 层 · 从另一边回来'), 3000);
+          break;
+        }
         if (p.prototype || p.impact) break;
         screens.toast('第 ' + p.runIndex + ' 局 · ' + (p.source === 'fallback' ? '离线关卡模板' : 'AI 生成关卡'), 2200);
+        break;
+      case 'loopClosed':
+        if (p.streak > 1) screens.toast('连扫 ×' + p.streak + (p.heal ? ' · 归廊 +' + p.heal + ' 生命' : ''), 1500);
+        break;
+      case 'loopLayer':
+        screens.toast('第 ' + p.layer + ' 层 · 进度已保存，可随时退出续玩', 3200);
         break;
       case 'roomEnter': {
         /* M1 文案不变；若 logic-dev 把 roomType 挂在 roomEnter 上则追加类型标签 */
@@ -147,7 +164,7 @@
         toastBossPhase(p);
         break;
       case 'perkOffer':
-        screens.showPerk(p.choices, p.nextIsBoss, p.prototype, p.impact);
+        screens.showPerk(p.choices, p.nextIsBoss, p.prototype, p.impact, p.loop);
         break;
       case 'perkPicked':
         screens.toast('获得「' + p.def.name + '」· ' + p.def.desc, 2000);
@@ -165,34 +182,49 @@
   }
 
   async function begin(mode) {
-    paused = true;                 // 重建 state 期间冻结主循环，避免跑上一局残帧
+    if (starting) return;
+    starting = true;
+    clearInput();
     audio.resume();
     screens.dismissToast();
-    screens.show(null);
     var themeId = activeThemeId();
-    applyAppDataTheme(themeId);        // 每次开局刷新，覆盖切主题后的重开
-    input.attackPressed = false;
-    if (mode && mode.impactWeapon) {
-      held = {};
-      input.aimX = input.aimY = null;
+    applyAppDataTheme(themeId);
+    input.aimX = input.aimY = null;
+    try {
+      screens.show('loading');
+      var s = await engine.startRun(Object.assign({ onEvent: onEvent, theme: themeId }, mode));
+      screens.updateHud(s);
+      battleClock = 0;
+      paused = false;
+    } catch (e) {
+      screens.show(mode && mode.impactTrial ? 'trial' : 'start');
+      screens.toast('开局失败，请重试');
+    } finally {
+      starting = false;
     }
-    var s = await engine.startRun(Object.assign({ onEvent: onEvent, theme: themeId }, mode));
-    if (s.prototype || s.impact) screens.updateHud(s);
-    paused = false;                /* B9：无论从暂停菜单 / 结算页 / 开始页进来，新局都不残留暂停态 */
   }
 
   function restart() {
     var s = engine.getState();
-    if (s && s.impact) return begin({ impactWeapon: s.impact.weapon, impactCombinations: s.impact.combinations });
+    if (s && s.loop) return begin({ loop: true });
+    if (s && s.impact) return begin({
+      impactWeapon: s.impact.weapon, impactCombinations: s.impact.combinations, impactTrial: s.impact.trial
+    });
     return begin(s && { prototype: s.prototype });
   }
 
   /* B9：统一的暂停开关 —— 暂停时打开面板，继续时收起面板 */
   function setPaused(v) {
     paused = !!v;
-    input.attackPressed = false;
+    clearInput();
+    if (paused) {
+      var s = engine.getState();
+      var trial = s.impact && s.impact.trial;
+      document.getElementById('pause-context').textContent = s.room.name +
+        (s.impact ? ' · 第 ' + s.impact.wave + ' / 2 组' : '');
+      document.getElementById('btn-pause-home').textContent = trial ? '返回单房设置' : '返回首页';
+    }
     screens.show(paused ? 'pause' : null);
-    if (!paused) screens.toast('继续', 1400);
   }
 
   function loop(ts) {
@@ -202,16 +234,17 @@
     /* B7/B9：暂停或任意弹窗打开时只重绘静止帧、不推进引擎，
      * 避免「弹窗里游戏还在后台跑」以及暂停后 HUD 继续走字。 */
     var cur = screens.current();
-    var blocking = cur === 'start' || cur === 'end' || cur === 'unlock' ||
-                   cur === 'perk' || cur === 'pause';
-    if (!paused && !blocking) {
+    if (!starting && !paused && !cur) {
+      battleClock += dt;
       syncInput();
       var s = engine.update(dt, input);
       if (dt > 0) input.attackPressed = false;
-      render.draw(ctx, s, clock);
-      screens.updateHud(s);
+      var cue = C.ui.combatGuide.get(s);
+      render.draw(ctx, s, battleClock, null, cue);
+      screens.updateHud(s, cue);
     } else {
-      render.draw(ctx, engine.getState(), clock);
+      var backdrop = cur === 'start' || cur === 'trial' || cur === 'loading' || cur === 'unlock';
+      render.draw(ctx, backdrop ? null : engine.getState(), backdrop ? clock : battleClock);
     }
     requestAnimationFrame(loop);
   }
@@ -230,11 +263,21 @@
 
     screens.init({
       onStart: begin,
+      onLoop: function () { begin({ loop: true }); },
+      onLoopContinue: function () { begin({ loop: true, continueRun: true }); },
       onRecall: function (variant) { begin({ prototype: variant }); },
       onImpact: function (weapon) { begin({ impactWeapon: weapon }); },
       onImpactCombinations: function (weapon) { begin({ impactWeapon: weapon, impactCombinations: true }); },
+      onTrial: function (weapon, version, preset) {
+        begin({ impactWeapon: weapon, impactTrial: { version: version, preset: preset } });
+      },
       onRestart: restart,
-      onPick: function (id) { if (engine.choosePerk(id)) screens.show(null); },
+      onPick: function (id) {
+        if (engine.choosePerk(id)) {
+          clearInput();
+          screens.show(null);
+        }
+      },
       onUnlock: function (id) {
         var from = document.getElementById('unlock-back').dataset.from;
         var r = engine.unlock(id);
@@ -246,55 +289,64 @@
         audio.setMuted(m);
         screens.setMuted(m);
       },
+      onPause: function () { if (!starting && !screens.current()) setPaused(true); },
       /* B9：暂停面板三个出口 */
       onResume: function () { setPaused(false); },
       onHome: function () {
-        paused = true;               // 开始页期间不推进引擎
+        paused = true;
+        clearInput();
         screens.dismissToast();
-        screens.show('start');
+        var s = engine.getState();
+        screens.show(s && s.impact && s.impact.trial ? 'trial' : 'start');
       }
     });
     screens.setMuted(audio.isMuted());
 
     window.addEventListener('keydown', function (e) {
-      if (e.target && e.target.tagName === 'SELECT') return;
       var k = e.key.toLowerCase();
-      held[k] = true;
-      if (!e.repeat && (k === ' ' || k === 'j') && !paused && !screens.current()) input.attackPressed = true;
-      if ([' ', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright'].indexOf(k) !== -1) e.preventDefault();
-      if (k === 'm') {
+      var cur = screens.current();
+      if (starting || (e.target && e.target.tagName === 'SELECT' && k !== 'escape')) return;
+      if (k === 'm' && !e.repeat) {
         var m = !audio.isMuted(); audio.setMuted(m); screens.setMuted(m);
       }
-      if (k === 'escape' && !e.repeat) {
+      if (k === 'escape') {
+        if (e.repeat) return;
         /* B7：Esc 语义按当前弹窗分流，杜绝「解锁页 / 词条页里叠加暂停」的冲突。
          *  - 解锁页 → 返回（等同顶部 × / 底部「返回」）
          *  - 暂停面板 → 继续
          *  - 开始页 / 结算页 / 词条页 → 不叠加暂停（词条选择不可跳过）
          *  - 无弹窗（游戏中）→ 切换暂停并打开暂停面板 */
-        var cur = screens.current();
         if (cur === 'unlock') screens.backFromUnlock();
+        else if (cur === 'trial') screens.show('start');
         else if (cur === 'pause') setPaused(false);
         else if (cur === 'perk') screens.toast('请先选择一条路径', 1600);
         else if (cur === 'start' || cur === 'end') { /* 不叠加暂停 */ }
         else setPaused(!paused);
+        return;
       }
-      if ((k === 'r' || k === 'enter') && !e.repeat && e.target && e.target.tagName !== 'BUTTON' && !document.getElementById('screen-end').classList.contains('hidden')) restart();
+      if (cur === 'end' && !e.repeat && (k === 'r' || (k === 'enter' && (!e.target || e.target.tagName !== 'BUTTON')))) {
+        restart();
+        return;
+      }
+      if (cur || paused) return;
+      if (k === ' ' && e.target && e.target.tagName === 'BUTTON') return;
+      held[k] = true;
+      if (!e.repeat && (k === ' ' || k === 'j')) input.attackPressed = true;
+      if ([' ', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright'].indexOf(k) !== -1) e.preventDefault();
     });
     window.addEventListener('keyup', function (e) { held[e.key.toLowerCase()] = false; });
-    window.addEventListener('blur', function () { held = {}; input.attackPressed = false; });
+    window.addEventListener('blur', clearInput);
 
     canvas.addEventListener('mousemove', function (e) {
       var p = toWorld(e);
       input.aimX = p.x; input.aimY = p.y;
     });
     canvas.addEventListener('mousedown', function (e) {
-      if (e.button !== 0) return;
+      if (e.button !== 0 || starting || paused || screens.current()) return;
       held.mouse = true;
-      if (!paused && !screens.current()) {
-        var p = toWorld(e);
-        input.aimX = p.x; input.aimY = p.y;
-        input.attackPressed = true;
-      }
+      var p = toWorld(e);
+      input.aimX = p.x; input.aimY = p.y;
+      input.attackPressed = true;
       audio.resume();
     });
     window.addEventListener('mouseup', function () { held.mouse = false; });
