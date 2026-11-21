@@ -1,0 +1,15 @@
+{
+  "background": "#1B2325",
+  "floor": "#283235",
+  "grid": "#384447",
+  "wall": "#8C8A7D",
+  "player": "#F06457",
+  "friendly": "#8EDBD0",
+  "enemy": "#DFAD87",
+  "hazard": "#F4B24A",
+  "bullet": "#FFF1C9",
+  "heal": "#6DC291",
+  "ore": "#DBE8E8",
+  "atmosphere": "#AC91D8",
+  "ink": "#171F21"
+}

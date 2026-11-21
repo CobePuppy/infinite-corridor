@@ -1,0 +1,4 @@
+interface:
+  display_name: "游戏开发协作指引"
+  short_description: "从一句话共同定下玩法，交付全套游戏开发文档，再按文档做出可玩版本"
+  default_prompt: "用 $game-dev-guide 带我从一句话创意开始，先一起定玩法、写齐开发文档，评审后按文档做出第一个可玩版本。"

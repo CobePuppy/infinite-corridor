@@ -1,0 +1,2745 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'none'; base-uri 'none'; form-action 'none'">
+<title>关城 · 本地试玩</title>
+<style>
+:root {
+  color-scheme: dark;
+  --ink:#171f21; --page:#1b2325; --floor:#283235; --grid:#384447;
+  --wall:#8c8a7d; --paper:#f3ead4; --muted:#c2bcae; --red:#f06457;
+  --gold:#f4b24a; --jade:#8edbd0; --ore:#dbe8e8; --purple:#ac91d8;
+  font:16px/1.5 "Microsoft YaHei UI","PingFang SC",system-ui,sans-serif;
+}
+*,*::before,*::after {box-sizing:border-box}
+body {margin:0;background:radial-gradient(ellipse at 70% 0,#2c3738,var(--page) 64%);color:var(--paper);min-height:100vh}
+button {font:inherit;color:inherit;cursor:pointer;background:#303a3b;border:1px solid #5c6868;border-radius:5px;padding:.63rem 1rem;text-align:center}
+button:hover:enabled {border-color:var(--gold);background:#394646}
+button:disabled {opacity:.48;cursor:default}
+button:focus-visible,canvas:focus-visible {outline:2px solid var(--gold);outline-offset:4px}
+button.primary {background:#9b372e;border-color:#da6e5d;color:#fff5e5}
+button.primary:hover:enabled {background:#b7463b}
+[hidden] {display:none !important}
+h1,h2,h3,p,dl,dd {margin:0}
+kbd {display:inline-block;font:600 .79em/1.1 ui-monospace,Consolas,monospace;padding:.22em .4em;border:1px solid #687474;border-radius:3px;color:var(--paper);white-space:nowrap}
+small,.muted {color:var(--muted)}
+.accent {color:var(--gold)}
+.negative {color:#ff917d}
+.shell {width:min(calc(100% - 40px),1460px);margin-inline:auto;padding-bottom:24px}
+.mast {border-bottom:1px solid #536160;display:flex;align-items:center;justify-content:space-between;padding:14px 0 12px;margin-bottom:16px}
+.mast strong {font-family:"Songti SC",SimSun,serif;font-size:1.35rem;letter-spacing:.19em}
+.mast .volume {display:flex;align-items:center;gap:8px;color:var(--muted);font-size:.85rem}
+.mast input {width:clamp(60px,13vw,126px);accent-color:var(--red)}
+.settings-fields {display:grid;gap:14px;margin-top:16px}
+.settings-fields label {display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.settings-fields input {accent-color:var(--red)}
+.achievement-list {list-style:none;padding:0;display:grid;gap:6px}
+.achievement-list li {padding:7px 10px;border-bottom:1px solid #455454}
+.cover {min-height:min(610px,calc(100svh - 105px));display:grid;grid-template-columns:1fr 1fr;align-items:center;gap:clamp(26px,6vw,90px);padding:32px clamp(12px,5vw,72px)}
+.cover h1 {font:700 clamp(3.7rem,9vw,8rem)/1 "Songti SC",SimSun,serif;letter-spacing:.12em}
+.cover .lead {font-size:clamp(1rem,2vw,1.23rem);margin:20px 0 24px;max-width:30em}
+.actions {display:flex;gap:10px;flex-wrap:wrap}
+.cover .actions button {min-width:136px}
+.controls {margin-top:22px;color:var(--muted);font-size:.9rem;display:grid;gap:8px;line-height:1.8}
+.stone-board {position:relative;aspect-ratio:1;border:1px solid #637170;border-radius:3px;box-shadow:0 22px 62px #111819,inset 0 0 42px #141b1d;background:#2d3939;align-self:center;max-width:450px;width:100%;justify-self:center}
+.stone-board::before {content:"";position:absolute;inset:9%;background-image:linear-gradient(to right,#627473 1px,transparent 1px),linear-gradient(to bottom,#627473 1px,transparent 1px);background-size:12.5% 12.5%;border-right:1px solid #627473;border-bottom:1px solid #627473}
+.stone-board i {background:radial-gradient(circle at 32% 28%,#f6efdb,#a5a08c 74%);position:absolute;width:9.8%;aspect-ratio:1;transform:translate(-50%,-50%);left:calc(9% + var(--x)*10.25%);top:calc(9% + var(--y)*10.25%);border-radius:50%;box-shadow:2px 5px 9px #131b1d}
+.stone-board i.red {background:radial-gradient(circle at 32% 28%,#f0846e,#a3332a 74%);outline:1px solid var(--gold);outline-offset:4px}
+.play {
+  --field-limit:max(220px,calc((100svh - 210px)*1.52));
+  display:grid;grid-template-columns:minmax(0,var(--field-limit)) 260px;
+  justify-content:center;gap:13px;align-items:start
+}
+.field {min-width:0;width:min(100%,var(--field-limit));justify-self:center}
+.vitals {display:grid;grid-template-columns:1.15fr 1fr 1fr .85fr;gap:12px;background:var(--ink);border:1px solid #4f605e;border-bottom:none;padding:10px 13px}
+.vitals div {min-width:0}
+.vitals b {font-weight:600;font-variant-numeric:tabular-nums}
+.vitals label {display:block;margin-bottom:4px;font-size:.79rem;color:var(--muted)}
+progress {display:block;width:100%;height:7px;border:0;background:#353f41;border-radius:2px;overflow:hidden}
+progress::-webkit-progress-bar {background:#353f41}
+progress::-webkit-progress-value {background:var(--fill,var(--jade))}
+progress::-moz-progress-bar {background:var(--fill,var(--jade))}
+canvas {display:block;width:100%;height:auto;aspect-ratio:38/25;background:var(--floor);border:1px solid #596967;touch-action:none}
+.strip {padding:8px 10px;color:var(--muted);font-size:.78rem;display:flex;flex-wrap:wrap;gap:4px 12px;background:var(--ink);border:1px solid #4f605e;border-top:0}
+.side,.scene,.dialog {background:#202a2c;border:1px solid #526261;border-radius:5px}
+.side {padding:14px;display:grid;gap:12px}
+.side h2 {font-size:1.25rem}
+.side hr {border:0;border-top:1px solid #455454;width:100%;margin:0}
+.inventory {display:grid;grid-template-columns:repeat(3,1fr);gap:7px}
+.inventory dt {font-size:.79rem;color:var(--muted)}
+.inventory dd {font-size:1.18rem;font-weight:700}
+.side .stack {display:grid;gap:8px}
+.side button {padding:.45rem .65rem;font-size:.87rem}
+.tutorial {border-left:3px solid var(--gold);padding-left:9px}
+.tutorial p {font-size:.88rem;margin-bottom:4px}
+.tutorial button {padding:.15rem .55rem}
+.scene {max-width:940px;margin:clamp(26px,7vh,75px) auto;padding:clamp(20px,5vw,43px)}
+.scene h1 {font:700 clamp(2rem,5.5vw,3.7rem)/1.2 "Songti SC",SimSun,serif;margin-bottom:10px}
+.scene p {margin-top:8px}
+.scene .actions {margin-top:19px}
+.overlay {position:fixed;z-index:5;inset:0;background:#11181ce0;display:grid;place-items:center;overflow:auto;padding:18px}
+.dialog {width:min(100%,650px);max-height:100%;overflow:auto;padding:clamp(17px,4vw,32px);box-shadow:0 18px 90px #060a0b;position:relative}
+.dialog.wide {width:min(100%,950px)}
+.dialog h2 {font-size:1.6rem;padding-right:55px}
+.dialog .close {position:absolute;right:16px;top:16px;padding:2px 9px;font-size:.82rem}
+.dialog .stack {display:grid;gap:8px;margin-top:16px}
+.dialog .stack button {text-align:left}
+.map-layout {margin-top:14px;display:grid;gap:16px;grid-template-columns:minmax(0,1fr) minmax(220px,.63fr)}
+.map-detail {padding:11px 13px;background:var(--ink);border:1px solid #455554;min-width:0}
+.map-detail h3 {margin-bottom:3px}
+.board {position:relative;aspect-ratio:2.24;width:100%;background:#273434;border:1px solid #4d5c5c;border-radius:3px;overflow:visible}
+.preview-board {margin-top:20px;max-width:720px}
+.board .line {height:2px;position:absolute;transform-origin:left center;background:#667473;pointer-events:none}
+.board .line.on {background:#c0aa79}
+.board .line.h {width:13.333%}
+.board .line.v {height:26%;width:2px}
+.board .cell {position:absolute;transform:translate(-50%,-50%);border-radius:50%;border:1px solid currentColor;color:#e8ddc5;background:#1a2527;box-shadow:0 2px 5px #0f1517;display:grid;place-items:center;width:8%;aspect-ratio:1;padding:0;font-size:clamp(.62rem,1.6vw,1.08rem);line-height:1;font-weight:650}
+.board .r {color:var(--jade)} .board .village {color:var(--purple)} .board .merchant,.board .boss {color:var(--gold)}
+.board .cell.on {background:#e8ddc5;color:var(--ink);border-color:#d8c8a5}
+.board .cell.in {outline:2px solid var(--gold);outline-offset:2px}
+.board .cell.here {box-shadow:0 0 0 3px var(--red)}
+.board .cell[aria-pressed="true"] {outline:2px dashed var(--paper);outline-offset:5px}
+.board .cell:focus-visible {outline:2px solid var(--paper);outline-offset:5px}
+.mini {aspect-ratio:2}
+.mini .cell {width:10%;font-size:.72rem}
+.results {display:grid;grid-template-columns:repeat(auto-fit,minmax(145px,1fr));gap:12px;margin:21px 0}
+.results div {padding:12px;border:1px solid #526261;background:#273334}
+.results dt {font-size:.83rem;color:var(--muted)}
+.results dd {font-size:1.19rem}
+@media(max-width:880px) {
+  .shell {width:calc(100% - 24px)}
+  .play {grid-template-columns:minmax(0,1fr)}
+  .side {grid-template-columns:1fr 1fr}
+  .side .stack,.side hr {grid-column:1/-1}
+  .side .stack {grid-template-columns:repeat(auto-fit,minmax(126px,1fr))}
+  .mini {max-width:185px}
+}
+@media(max-width:620px) {
+  .cover,.map-layout {grid-template-columns:1fr}
+  .cover {padding:24px 8px}
+  .stone-board {max-width:285px}
+  .vitals {padding:6px;gap:6px}
+  .vitals label {font-size:.66rem}
+  .vitals b {font-size:.75rem}
+  .dialog .close {top:12px;right:10px}
+}
+</style>
+</head>
+<body>
+<main class="shell">
+  <header class="mast"><strong>关城棋局</strong><label class="volume">音量 <input id="volume" type="range" min="0" max="100" value="55"><output id="volume-value">55%</output></label></header>
+  <section id="home" class="cover" aria-label="开始界面">
+    <div>
+      <h1>关城</h1>
+      <p class="lead">走过棋盘，清房形成围局。点亮村火，再迎战镇关棋帅。</p>
+      <div class="actions">
+        <button id="new-game" class="primary" type="button">开始新局</button>
+        <button id="resume-game" type="button" hidden>继续存档</button>
+        <button id="open-profile" type="button">科技树 · 矿石</button>
+        <button id="open-settings" type="button">设置</button>
+        <button id="open-stats" type="button">累计与成就</button>
+      </div>
+      <div id="home-keys" class="controls">
+        <span><kbd>WASD</kbd> 移动　<b>鼠标</b> 瞄准　<b>左键</b> 普攻　<b>右键</b> 小技能</span>
+        <span><kbd>Space</kbd> 冲刺　<kbd>Q</kbd> 大招　<kbd>Tab</kbd> 棋盘　<kbd>Esc</kbd> 暂停</span>
+        <span><kbd>E</kbd> 过门／交互　<kbd>B</kbd> 建造　<kbd>F</kbd> 远程制材　<kbd>T</kbd> 确认传送</span>
+      </div>
+      <p id="home-storage" class="muted" hidden></p>
+    </div>
+    <div class="stone-board" aria-hidden="true">
+      <i style="--x:3;--y:3"></i><i style="--x:4;--y:3"></i><i style="--x:5;--y:3"></i>
+      <i style="--x:3;--y:4"></i><i class="red" style="--x:4;--y:4"></i><i style="--x:5;--y:4"></i>
+      <i style="--x:3;--y:5"></i><i style="--x:4;--y:5"></i><i style="--x:5;--y:5"></i>
+    </div>
+  </section>
+  <section id="preview" class="scene" hidden>
+    <h1>落子前看盘</h1>
+    <p>朱衣刀客 · 固定种子 20261120 · 确认后开始计时</p>
+    <div id="preview-board" class="board preview-board" aria-label="关城棋盘预览"></div>
+    <p class="muted">始 出生　材 资源　战 普通　精 精英　商 商人　村 村庄　帅 棋帅</p>
+    <div class="actions"><button id="start-run" class="primary">确认落子 <kbd>Enter</kbd></button><button data-home>返回</button></div>
+  </section>
+  <section id="play" class="play" hidden aria-label="游戏界面">
+    <div class="field">
+      <div class="vitals">
+        <div><label for="hp-bar">生命 <b id="hp"></b></label><progress id="hp-bar" style="--fill:#6dc291" value="100" max="100"></progress></div>
+        <div><label for="mood-bar">氛围 <b id="mood"></b></label><progress id="mood-bar" style="--fill:#ac91d8" value="0" max="100"></progress></div>
+        <div><label for="battle-bar">战斗 <b id="battle"></b></label><progress id="battle-bar" style="--fill:#f4b24a" value="0" max="100"></progress></div>
+        <div><label id="clock-label">探索余时</label><b id="clock">13:00</b></div>
+      </div>
+      <canvas id="arena" tabindex="0" width="1140" height="750" aria-label="战斗区域：WASD 移动，鼠标瞄准与挥刀"></canvas>
+      <div id="play-keys" class="strip"><span><kbd>WASD</kbd> 移动</span><span>左键 普攻</span><span>右键 小技能 <b id="skill-cd"></b></span>
+        <span><kbd>Space</kbd> 冲刺 <b id="dash-cd"></b></span><span><kbd>Q</kbd> <b id="ultimate">双槽满放大</b></span>
+        <span><kbd>E</kbd> 过门／交互</span><span><kbd>Esc</kbd> 暂停</span></div>
+    </div>
+    <aside class="side">
+      <div><h2 id="room-name"></h2><p id="room-state" class="muted"></p></div>
+      <div class="board mini" id="mini-board" aria-label="小地图"></div>
+      <hr>
+      <dl class="inventory"><div><dt>金币</dt><dd id="gold"></dd></div><div><dt>建材</dt><dd id="materials"></dd></div><div><dt>矿石</dt><dd id="ore"></dd></div></dl>
+      <p id="building-info" class="muted" hidden></p>
+      <div class="stack">
+        <button id="open-map">打开棋盘 <kbd>Tab</kbd></button>
+        <button id="open-building" hidden>建造／升级 <kbd>B</kbd></button>
+        <button id="open-merchant" hidden>商人交易 <kbd>E</kbd></button>
+        <button id="order-material" hidden>远程制材 · 8 金币 <kbd>F</kbd></button>
+        <button id="open-skill" hidden></button>
+        <button id="open-event" hidden>查看村庄事件</button>
+        <button id="open-pack" hidden>道具 <kbd>C</kbd></button>
+        <button id="pause">暂停 <kbd>Esc</kbd></button>
+      </div>
+      <section id="tutorial" class="tutorial" hidden aria-label="新手引导">
+        <p id="tutorial-step"></p><button id="skip-tutorial" type="button">跳过引导</button>
+      </section>
+      <p id="status" class="muted" role="status"></p>
+    </aside>
+  </section>
+  <section id="result" class="scene" hidden aria-label="结算">
+    <h1 id="result-title"></h1>
+    <p id="result-time" class="muted"></p>
+    <dl class="results" id="result-stats"></dl>
+    <p id="result-save" role="status"></p>
+    <div class="actions"><button id="play-again" class="primary">再下一局</button><button data-home>回到主菜单</button><button id="retry-save" hidden>重试存档</button></div>
+  </section>
+  <section id="profile" class="scene" hidden aria-label="科技树">
+    <h1>科技树</h1>
+    <p id="profile-balance"></p>
+    <dl class="results"><div><dt>角色</dt><dd>角色与技能</dd></div><div><dt>开局效果</dt><dd>建材与效率</dd></div><div><dt>局内事件</dt><dd>棋帅分支</dd></div></dl>
+    <p>本版可查看分支与余额。</p>
+    <div class="actions"><button data-home>回到主菜单</button><button id="profile-retry" hidden>重试存档</button></div>
+  </section>
+  <section id="stats" class="scene" hidden aria-label="累计与成就">
+    <h1>累计与成就</h1>
+    <dl id="career-totals" class="results"></dl>
+    <ul id="achievement-list" class="achievement-list"></ul>
+    <p id="career-status" role="status"></p>
+    <div class="actions"><button data-home>回到主菜单</button></div>
+  </section>
+  <section id="settings" class="scene" hidden aria-label="设置">
+    <h1>设置</h1>
+    <div class="settings-fields">
+      <label>音量 <input id="settings-volume" type="range" min="0" max="100" value="55"> <output id="settings-volume-value">55%</output></label>
+      <label>鼠标瞄准灵敏度 <input id="settings-aim" type="range" min="25" max="100" value="100"> <output id="settings-aim-value">100%</output></label>
+      <label><input id="settings-hints" type="checkbox" checked> 显示键位提示</label>
+    </div>
+    <p id="settings-status" role="status"></p>
+    <div class="actions"><button id="close-settings" type="button">返回</button></div>
+  </section>
+  <div id="overlay" class="overlay" hidden>
+    <section id="dialog" class="dialog" tabindex="-1" role="dialog" aria-modal="true" aria-labelledby="dialog-title">
+      <button id="close-dialog" class="close" aria-label="关闭面板">关闭 <kbd>Esc</kbd></button>
+      <h2 id="dialog-title"></h2>
+      <div id="dialog-body"></div>
+    </section>
+  </div>
+</main>
+<script>
+"use strict";
+
+const SEED = 20261120;
+const RUN_LIMIT = 13*60*1000;
+const WORLD = {w: 1900, h: 1250, player: 32};
+const START = "0,0";
+const BOSS = "5,1";
+const DIRECTIONS = [[1,0], [0,1], [-1,0], [0,-1]];
+const LAYOUT = [
+    [0,0,"r"], [1,0,"fight"], [2,0,"merchant"], [3,0,"fight"], [4,0,"fight"], [5,0,"fight"], [6,0,"elite"],
+    [0,1,"fight"], [1,1,"fight"], [2,1,"fight"], [3,1,"r"], [4,1,"fight"], [5,1,"boss"], [6,1,"fight"],
+    [0,2,"r"], [1,2,"fight"], [2,2,"elite"], [3,2,"fight"], [4,2,"village"], [5,2,"fight"]
+];
+const ROOM_NAME = {r:"资源采集房", fight:"普通战斗房", elite:"精英战斗房", merchant:"行脚商人", village:"村庄", boss:"镇关棋帅"};
+const ROOM_SYMBOL = {r:"材", fight:"战", elite:"精", merchant:"商", village:"村", boss:"帅"};
+const ROOM_STYLE = {
+    fight:{floor:"#283235",grid:"#384447",accent:"#8c8a7d",motif:"court"},
+    r:{floor:"#24363a",grid:"#355052",accent:"#8edbd0",motif:"mineral"},
+    village:{floor:"#372c30",grid:"#4d363a",accent:"#f06457",motif:"lantern"},
+    merchant:{floor:"#383329",grid:"#514936",accent:"#f4b24a",motif:"stall"},
+    elite:{floor:"#302c3c",grid:"#443c55",accent:"#ac91d8",motif:"banner"},
+    boss:{floor:"#27292d",grid:"#3c3e46",accent:"#c78b78",motif:"seal"}
+};
+const BUILDINGS = {market:"商场", factory:"建材厂", mine:"苍白矿场", village:"村庄"};
+const COLOR = {
+    ink:"#171F21", background:"#1B2325", floor:"#283235", grid:"#384447", wall:"#8C8A7D",
+    player:"#F06457", friendly:"#8EDBD0", enemy:"#DFAD87", hazard:"#F4B24A", bullet:"#FFF1C9",
+    heal:"#6DC291", ore:"#DBE8E8", atmosphere:"#AC91D8", paper:"#F3EAD4"
+};
+const ceil = (value, divisor) => Math.ceil(value / divisor);
+const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
+const percent = (value, rate) => ceil(value * rate, 100);
+function effectiveDefense(defense, flat, magic) {
+    return percent(Math.max(0, defense - flat), 100 - clamp(magic, 0, 100));
+}
+function damage(attack, defense, flat = 0, magic = 0) {
+    const difference = attack - effectiveDefense(defense, flat, magic);
+    return difference > 0 ? difference : percent(attack, 5);
+}
+const keyOf = (x, y) => x + "," + y;
+const cell = key => key.split(",").map(Number);
+const neighborsOf = (x, y) => DIRECTIONS.map(([dx,dy]) => keyOf(x + dx, y + dy));
+const vector = (x, y) => ({x,y});
+const add = (a,b) => vector(a.x+b.x, a.y+b.y);
+const sub = (a,b) => vector(a.x-b.x, a.y-b.y);
+const scale = (a,k) => vector(a.x*k, a.y*k);
+const dot = (a,b) => a.x*b.x + a.y*b.y;
+const length = a => Math.hypot(a.x, a.y);
+const distance = (a,b) => length(sub(a,b));
+const unit = a => length(a) > .032 ? scale(a, 1 / length(a)) : vector(0,0);
+const pointAt = angle => vector(Math.cos(angle), Math.sin(angle));
+const directionAngle = a => Math.atan2(a.y, a.x);
+function segmentDistance(p,a,b) {
+    const edge = sub(b,a);
+    const square = dot(edge,edge);
+    return square ? distance(p, add(a, scale(edge, clamp(dot(sub(p,a),edge) / square, 0, 1)))) : distance(p,a);
+}
+function inFan(origin, facing, point, reach, angle, radius) {
+    const delta = sub(point,origin);
+    const dist = length(delta);
+    return dist <= reach + radius && (angle >= 360 || dist <= radius ||
+        dot(scale(delta, 1 / dist), facing) >= Math.cos(angle * Math.PI / 360));
+}
+function contain(point, radius) {
+    return vector(clamp(point.x,radius,WORLD.w-radius), clamp(point.y,radius,WORLD.h-radius));
+}
+function door(dx,dy,inset) {
+    return vector(dx === 0 ? WORLD.w/2 : dx > 0 ? WORLD.w-inset : inset,
+        dy === 0 ? WORLD.h/2 : dy > 0 ? inset : WORLD.h-inset);
+}
+
+// The seeded subtractive generator matches the WinForms demo's Random(int) streams.
+function roomRandom(key, stream) {
+    const [x,y] = cell(key);
+    const limit = 2147483647;
+    const values = new Int32Array(56);
+    let j = 161803398 - (SEED + x * 4099 + y * 127 + stream * 84017);
+    let k = 1;
+    values[55] = j;
+    for (let i=1; i<55; i++) {
+        const index = 21*i % 55;
+        values[index] = k;
+        k = j-k;
+        if (k < 0) k += limit;
+        j = values[index];
+    }
+    for (let pass=0; pass<4; pass++) {
+        for (let i=1; i<=55; i++) {
+            let value = values[i] - values[1+(i+30)%55];
+            if (value < 0) value += limit;
+            values[i] = value;
+        }
+    }
+    let first = 0;
+    let second = 21;
+    const random = (max = limit) => {
+        if (++first >= 56) first = 1;
+        if (++second >= 56) second = 1;
+        let result = values[first]-values[second];
+        if (result === limit) result--;
+        if (result < 0) result += limit;
+        values[first] = result;
+        return max === limit ? result : Math.floor(result / limit * max);
+    };
+    random.snapshot = () => ({values:[...values],first,second});
+    random.restore = state => {
+        if (!Array.isArray(state?.values) || state.values.length !== 56 ||
+            !state.values.every(value => Number.isInteger(value) && value>=0 && value<limit) ||
+            ![state.first,state.second].every(value => Number.isInteger(value) && value>=0 && value<56))
+            throw new Error("随机状态无效");
+        first = state.first;
+        second = state.second;
+        values.set(state.values);
+    };
+    return random;
+}
+function flood(walls, candidates) {
+    const blocked = new Set(walls);
+    const points = Array.from(candidates);
+    if (!points.length) return new Set();
+    const coordinates = points.map(cell);
+    const left = Math.min(...coordinates.map(([x]) => x)) - 1;
+    const right = Math.max(...coordinates.map(([x]) => x)) + 1;
+    const bottom = Math.min(...coordinates.map(([,y]) => y)) - 1;
+    const top = Math.max(...coordinates.map(([,y]) => y)) + 1;
+    const queue = [keyOf(left,bottom)];
+    const seen = new Set(queue);
+    for (let i=0; i<queue.length; i++) {
+        for (const next of neighborsOf(...cell(queue[i]))) {
+            const [x,y] = cell(next);
+            if (x<left || x>right || y<bottom || y>top || blocked.has(next) || seen.has(next)) continue;
+            seen.add(next);
+            queue.push(next);
+        }
+    }
+    return new Set(points.filter(key => !seen.has(key) && !blocked.has(key)));
+}
+class Board {
+    rooms = new Map(LAYOUT.map(([x,y,type]) => [keyOf(x,y), {
+        id:keyOf(x,y), x, y, type, done:false, building:null, level:0, progress:0, pots:0, loot:[]
+    }]));
+    neighbors(id) { return neighborsOf(...cell(id)).filter(key => this.rooms.has(key)); }
+    get count() { return [...this.rooms.values()].filter(room => room.done).length; }
+    distances(start) {
+        const distances = new Map();
+        if (!this.rooms.get(start)?.done) return distances;
+        const queue = [start];
+        distances.set(start,0);
+        for (let i=0; i<queue.length; i++) {
+            const here = queue[i];
+            for (const next of this.neighbors(here)) {
+                if (!this.rooms.get(next).done || distances.has(next)) continue;
+                distances.set(next,distances.get(here)+1);
+                queue.push(next);
+            }
+        }
+        return distances;
+    }
+    enclosed() {
+        const inside = flood(this.distances(START).keys(), this.rooms.keys());
+        for (const room of this.rooms.values()) if (room.done) inside.delete(room.id);
+        return inside;
+    }
+    entry(from, target) {
+        const lit = this.distances(from);
+        return this.neighbors(target).some(id => lit.has(id));
+    }
+    transport(from, target) {
+        if (from === target) return null;
+        if (target === BOSS) return this.entry(from,target) ? 5000 : null;
+        const hops = this.distances(from).get(target);
+        return hops === undefined ? null : 2000*hops;
+    }
+}
+
+function weightedChoice(entries,random) {
+    let roll = random(entries.reduce((total,entry) => total+entry.weight,0));
+    for (const entry of entries) {
+        if (roll < entry.weight) return entry;
+        roll -= entry.weight;
+    }
+}
+
+const VILLAGE_EVENTS = [
+    {id:"copper",name:"灯下铜钱",rarity:"常见",weight:60,description:"村人凑出 10 金币。贷款中的收入按八成入账。",grant:run => run.wallet.earn(10)},
+    {id:"tea",name:"热茶与药",rarity:"少见",weight:25,description:"药婆递来热茶，恢复 20 生命。",grant:run => run.fighter.heal(20)},
+    {id:"timber",name:"藏在梁下的木料",rarity:"稀有",weight:10,description:"修屋剩下一份木料。获得 1 建材。",grant:run => { run.wallet.materials++; }},
+    {id:"lanterns",name:"百灯应手",rarity:"珍稀",weight:5,description:"家家点灯。立即获得 25 氛围。",grant:run => { run.fighter.mood = Math.min(100,run.fighter.mood+25); }}
+];
+
+const CONSUMABLES = {
+    purge:{name:"清风符",description:"清除当前房间的敌方弹幕",key:"1",
+        use:run => { run.arena.clearBullets(); }},
+    tonic:{name:"回春散",description:"每秒恢复 3 生命，持续 5 秒",key:"2",
+        use:run => run.fighter.effects.apply("regen")},
+    fury:{name:"焰心丸",description:"攻击 +8，持续 10 秒",key:"3",
+        use:run => run.fighter.effects.apply("fury")}
+};
+const SHOP_CATALOG = [
+    {id:"purge",weight:30,price:10},
+    {id:"tonic",weight:45,price:8},
+    {id:"fury",weight:25,price:12}
+];
+const SHOP_AFFIXES = [
+    {id:"armor",name:"叠甲",stat:"防御",field:"defenseBonus",amount:2,price:19,weight:25},
+    {id:"vigor",name:"养气",stat:"最大生命",field:"maxHp",amount:8,price:22,weight:30},
+    {id:"edge",name:"破甲",stat:"物穿",field:"penetrationBonus",amount:2,price:25,weight:20},
+    {id:"swift",name:"轻身",stat:"移速",field:"speedBonus",amount:5,price:18,weight:25,unit:"%"}
+];
+const AFFIX_BY_ID = Object.fromEntries(SHOP_AFFIXES.map(item => [item.id,item]));
+const RELICS = {guard:{name:"铜护符",description:"本局防御 +3"}};
+const EFFECTS = {regen:{duration:5000},fury:{duration:10000,attack:8}};
+
+class StatusEffects {
+    active = {};
+    apply(id) {
+        const {duration} = EFFECTS[id];
+        this.active[id] = {remaining:duration,elapsed:0};
+    }
+    get attack() { return this.active.fury ? EFFECTS.fury.attack : 0; }
+    tick(ms,fighter) {
+        for (const [id,effect] of Object.entries(this.active)) {
+            const elapsed = Math.min(effect.remaining,ms);
+            effect.remaining -= elapsed;
+            if (id === "regen") {
+                effect.elapsed += elapsed;
+                while (effect.elapsed >= 1000) {
+                    effect.elapsed -= 1000;
+                    fighter.heal(3);
+                }
+            }
+            if (!effect.remaining) delete this.active[id];
+        }
+    }
+}
+
+const HEROES = {
+    swordsman:{name:"朱衣刀客",roomRecoveryBonus:5,villageMoodBonus:15}
+};
+
+class Fighter {
+    constructor(hero = HEROES.swordsman) { this.hero = hero; }
+    hp = 100;
+    maxHp = 100;
+    shield = 0;
+    shieldMs = 0;
+    mood = 0;
+    battle = 0;
+    strength = 0;
+    defenseBonus = 0;
+    penetrationBonus = 0;
+    speedBonus = 0;
+    effects = new StatusEffects();
+    boost = 0;
+    boostMs = 0;
+    ultimate() {
+        if (this.mood < 100 || this.battle < 100 || this.hp <= 0) return false;
+        const lost = this.maxHp - this.hp;
+        this.hp = Math.max(1, this.hp-percent(this.hp,15));
+        if (this.shield === 0) this.shieldMs = 0;
+        this.shield += percent(lost,50);
+        if (!this.boostMs) this.boost = 8+percent(lost,20);
+        this.boostMs = 10000;
+        this.mood = this.battle = 0;
+        return true;
+    }
+    tick(ms) {
+        this.effects.tick(ms,this);
+        this.boostMs = Math.max(0,this.boostMs-ms);
+        if (!this.boostMs) this.boost = 0;
+        if (!this.shield) return;
+        this.shieldMs += ms;
+        while (this.shieldMs >= 1000 && this.shield > 0) {
+            this.shieldMs -= 1000;
+            const ratio = this.shield*100/this.maxHp;
+            const loss = ratio < 10 ? 4 : ratio < 20 ? 3 : ratio < 30 ? 2 : 1;
+            this.shield = Math.max(0,this.shield-loss);
+        }
+    }
+    heal(amount) { this.hp = Math.min(this.maxHp,this.hp+amount); }
+    hit(amount) {
+        const absorbed = Math.min(this.shield,amount);
+        this.shield -= absorbed;
+        this.hp = Math.max(0,this.hp-amount+absorbed);
+    }
+}
+class Wallet {
+    gold = 0;
+    materials = 1;
+    ore = 0;
+    borrowed = false;
+    earn(gross) {
+        const net = this.borrowed ? percent(gross,80) : gross;
+        this.gold += net;
+        return net;
+    }
+    spend(amount) {
+        if (this.gold < amount) return false;
+        this.gold -= amount;
+        return true;
+    }
+    borrow() {
+        if (this.borrowed) return false;
+        this.gold = Math.min(this.gold-15,-1);
+        this.materials++;
+        this.borrowed = true;
+        return true;
+    }
+}
+
+class FrameClock {
+    last = null;
+    carry = 0;
+    reset() { this.last = null; this.carry = 0; }
+    advance(now, playing, step) {
+        if (!playing) { this.reset(); return; }
+        const elapsed = this.last === null ? 0 : clamp(now-this.last,0,120);
+        this.last = now;
+        this.carry += elapsed;
+        while (this.carry >= 10) {
+            this.carry -= 10;
+            if (step(10) === false) { this.reset(); break; }
+        }
+    }
+}
+
+
+const SOUND = {
+    swing:["triangle",260,95,78,1100,25], hit:["square",155,68,58,850,22],
+    hurt:["sawtooth",185,55,145,430,34], dash:["triangle",170,410,125,1150,30],
+    skill:["sawtooth",460,135,160,1700,22], ultimate:["triangle",95,540,360,1900,38],
+    shot:["triangle",540,210,68,1400,18], kill:["square",120,52,158,600,24],
+    pickup:["sine",460,840,115,1800,32], build:["triangle",200,610,230,1300,29],
+    bossWarning:["sawtooth",135,81,420,520,26], room:["sine",250,390,105,1500,24]
+};
+
+class GameAudio {
+    level = 55;
+    played = new Map();
+    unlock() {
+        const Context = globalThis.AudioContext ?? globalThis.webkitAudioContext;
+        if (!Context || !this.level) return;
+        try {
+            if (!this.context) {
+                this.context = new Context();
+                this.master = this.context.createGain();
+                this.master.gain.value = this.level/100;
+                this.master.connect(this.context.destination);
+            }
+            if (this.context.state === "suspended") this.context.resume().catch(() => {});
+        } catch {
+            this.context = null;
+            this.master = null;
+        }
+    }
+    volume(level) {
+        this.level = clamp(Math.ceil(Number(level) || 0),0,100);
+        if (this.master) this.master.gain.value = this.level/100;
+    }
+    play(kind) {
+        const ctx = this.context;
+        const sound = SOUND[kind];
+        if (!sound || !this.level || ctx?.state !== "running") return;
+        const now = ctx.currentTime;
+        if (now-(this.played.get(kind) ?? -1) < (kind === "shot" ? .07 : .035)) return;
+        this.played.set(kind,now);
+        const [wave,from,to,ms,cutoff,volume] = sound;
+        const oscillator = ctx.createOscillator();
+        const filter = ctx.createBiquadFilter();
+        const envelope = ctx.createGain();
+        const end = now+ms/1000;
+        oscillator.type = wave;
+        oscillator.frequency.setValueAtTime(from,now);
+        oscillator.frequency.exponentialRampToValueAtTime(to,end);
+        filter.type = "lowpass";
+        filter.frequency.value = cutoff;
+        envelope.gain.setValueAtTime(.001,now);
+        envelope.gain.linearRampToValueAtTime(volume/100,now+.008);
+        envelope.gain.exponentialRampToValueAtTime(.001,end);
+        oscillator.connect(filter);
+        filter.connect(envelope);
+        envelope.connect(this.master);
+        oscillator.onended = () => {
+            oscillator.disconnect();
+            filter.disconnect();
+            envelope.disconnect();
+        };
+        oscillator.start(now);
+        oscillator.stop(end);
+    }
+}
+
+class CombatEffects {
+    particles = Array.from({length:144},() => ({life:0}));
+    cursor = 0;
+    age = 0;
+    shake = 0;
+    trail = 0;
+
+    spawn(kind,point,life,tint,velocity=vector(0,0),value=0) {
+        const slot = this.particles[this.cursor++ % this.particles.length];
+        Object.assign(slot,{kind,point,life,maxLife:life,tint,velocity,value});
+    }
+    emit(kind,point,value) {
+        if (kind === "room") {
+            this.particles.forEach(particle => { particle.life = 0; });
+            this.shake = this.trail = 0;
+            return;
+        }
+        if (!point) return;
+        if (kind === "hurt") this.shake = 150;
+        if (kind === "hit" || kind === "hurt") {
+            const tint = kind === "hurt" ? COLOR.player : COLOR.bullet;
+            this.spawn("number",add(point,vector(0,-40)),620,tint,vector(0,-130),value);
+        }
+        if (kind === "impact" || kind === "kill") {
+            const tint = kind === "impact" ? COLOR.hazard : COLOR.friendly;
+            const count = kind === "impact" ? 8 : 13;
+            for (let index=0; index<count; index++) {
+                const velocity = scale(pointAt(index*2*Math.PI/count),110+Math.random()*280);
+                this.spawn("spark",point,220+Math.ceil(Math.random()*160),tint,velocity);
+            }
+        }
+        if (kind === "kill") this.spawn("number",add(point,vector(0,-68)),460,COLOR.friendly,vector(0,-90),"击倒");
+        if (kind === "dash") this.spawn("trail",point,175,COLOR.player);
+    }
+    update(ms,arena) {
+        this.age += ms;
+        this.shake = Math.max(0,this.shake-ms);
+        if (arena.dashMs) {
+            this.trail += ms;
+            if (this.trail >= 30) {
+                this.spawn("trail",arena.player,170,COLOR.player);
+                this.trail -= 30;
+            }
+        } else this.trail = 0;
+        for (const particle of this.particles) {
+            if (!particle.life) continue;
+            particle.life = Math.max(0,particle.life-ms);
+            particle.point = add(particle.point,scale(particle.velocity,ms/1000));
+        }
+    }
+}
+
+function readLocal(access,key) {
+    try { return access().getItem(key); }
+    catch { return null; }
+}
+function writeLocal(access,key,value) {
+    try { access().setItem(key,value); return access().getItem(key) === value; }
+    catch { return false; }
+}
+
+const OPTIONS_KEY = "guancheng.web.v2.options";
+class GameOptions {
+    volume = 55;
+    sensitivity = 100;
+    hints = true;
+    constructor(access) {
+        this.access = access;
+        try {
+            const data = JSON.parse(readLocal(access,OPTIONS_KEY));
+            if (Number.isInteger(data?.volume)) this.volume = clamp(data.volume,0,100);
+            if (Number.isInteger(data?.sensitivity)) this.sensitivity = clamp(data.sensitivity,25,100);
+            if (typeof data?.hints === "boolean") this.hints = data.hints;
+        } catch {}
+    }
+    save() {
+        const data = {volume:this.volume,sensitivity:this.sensitivity,hints:this.hints};
+        return writeLocal(this.access,OPTIONS_KEY,JSON.stringify(data));
+    }
+}
+
+const GUIDE_KEY = "guancheng.web.v2.guide";
+const GUIDE_STEPS = [
+    ["move","用 WASD 移动一步。"],
+    ["dash","按 Space 冲刺。"],
+    ["skill","用鼠标右键释放小技能。"],
+    ["build","按 B，选择一项建筑。"],
+    ["door","靠近亮门按 E，或在 Tab 棋盘选相邻房过门。"]
+];
+
+class Tutorial {
+    remaining = 0;
+    completed = new Set();
+    constructor(access) {
+        this.access = access;
+        this.seen = readLocal(access,GUIDE_KEY) === "seen";
+    }
+    begin() { if (!this.seen) this.remaining = 30000; }
+    get next() { return GUIDE_STEPS.find(([id]) => !this.completed.has(id)); }
+    mark(id) {
+        if (!this.remaining) return;
+        this.completed.add(id);
+        if (!this.next) this.finish();
+    }
+    tick(ms) {
+        if (!this.remaining) return;
+        this.remaining = Math.max(0,this.remaining-ms);
+        if (!this.remaining) this.finish();
+    }
+    finish() {
+        this.remaining = 0;
+        this.seen = true;
+        writeLocal(this.access,GUIDE_KEY,"seen");
+    }
+}
+
+const SAVE_PREFIX = "guancheng.web.v1.ore.";
+let runSequence = 0;
+function newRunId() {
+    if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID();
+    return Date.now().toString(36) + "-" + Math.random().toString(36).slice(2) + "-" + (++runSequence);
+}
+class Ledger {
+    // One immutable key per result, so independent runs in separate tabs do not overwrite a shared total.
+    constructor(access) {
+        this.access = access;
+        this.known = new Map();
+        this.pending = new Map();
+        this.restricted = false;
+    }
+    read(storage) {
+        const ledger = new Map();
+        for (let i=0; i<storage.length; i++) {
+            const key = storage.key(i);
+            if (!key?.startsWith(SAVE_PREFIX)) continue;
+            const raw = storage.getItem(key);
+            if (raw === null || !/^[0-6]$/.test(raw)) continue;
+            ledger.set(key.slice(SAVE_PREFIX.length),Number(raw));
+        }
+        return ledger;
+    }
+    refresh() {
+        try {
+            const storage = this.access();
+            this.known = this.read(storage);
+            this.restricted = false;
+            return storage;
+        } catch {
+            this.restricted = true;
+            return null;
+        }
+    }
+    get balance() {
+        let balance = 0;
+        for (const value of this.known.values()) balance += value;
+        for (const [id,ore] of this.pending) if (!this.known.has(id)) balance += ore;
+        return balance;
+    }
+    get provisional() {
+        return [...this.pending.keys()].some(id => !this.known.has(id));
+    }
+    deposit(id, ore) {
+        if (ore === 0) return true;
+        if (!Number.isInteger(ore) || ore < 0 || ore > 6) throw new RangeError("无效矿石数量");
+        if (!this.known.has(id) && !this.pending.has(id)) this.pending.set(id,ore);
+        this.sync();
+        return this.known.has(id);
+    }
+    sync() {
+        const storage = this.refresh();
+        if (!storage) return;
+        for (const [id,ore] of this.pending) {
+            const key = SAVE_PREFIX + id;
+            try {
+                const existing = storage.getItem(key);
+                if (existing === null) storage.setItem(key,String(ore));
+                const committed = storage.getItem(key);
+                if (committed === null || !/^[0-6]$/.test(committed)) throw new Error("矿石记录不可用");
+                this.known.set(id,Number(committed));
+                this.pending.delete(id);
+            } catch {
+                this.restricted = true;
+            }
+        }
+    }
+}
+
+const ENEMIES = {
+    thief:{name:"小偷",hp:24,defense:1,speed:750,radius:35,gold:1},
+    rebel:{name:"反贼",hp:36,defense:9,speed:400,radius:43,gold:2},
+    heavy:{name:"重盔",hp:88,defense:17,speed:200,radius:58,gold:3},
+    archer:{name:"弓手",hp:30,defense:5,speed:300,radius:38,gold:2},
+    cavalry:{name:"骑兵",hp:150,defense:21,speed:600,radius:66,gold:8},
+    marshal:{name:"镇关棋帅",hp:600,defense:25,speed:250,radius:300,gold:0}
+};
+function move(name, shape, windup, recovery, cooldown, reach, angle, power, stun=0) {
+    return {name,shape,windup,recovery,cooldown,reach,angle,power,stun};
+}
+const MOVES = {
+    stab:move("匕首前刺","fan",350,400,2000,100,52,11),
+    cleave:move("大刀挥砍","fan",650,420,2500,140,96,15),
+    slam:move("圆砸 · 敌我皆中","fan",2000,0,1000,150,360,24),
+    sweep:move("半圆横扫","fan",2000,0,1000,250,180,26,500),
+    arrow:move("瞄准射箭","lane",2000,350,2000,1900,0,13),
+    charge:move("直线冲锋","lane",1000,1000,8000,2000,0,32,700),
+    volley:move("落子 · 连珠","lane",600,600,5000,2000,0,21),
+    ring:move("棋盘 · 环射","ring",1500,600,6000,460,360,18),
+    bossSlash:move("横斩","fan",1500,600,4000,250,120,28,500),
+    spiral:move("回环棋势","ring",1050,570,6500,430,360,14),
+    homing:move("逐灯棋弹","lane",1100,520,7200,1700,0,16),
+    scatter:move("长枪 · 散阵","fan",800,600,5800,620,86,14),
+    wall:move("封道棋阵","lane",1550,640,11000,1700,0,18),
+    lance:move("长枪刺击","fan",800,600,0,185,46,19),
+    horseSweep:move("长枪横扫","fan",1500,600,4000,250,180,22,500)
+};
+function makeWave(room, completed) {
+    if (room.type === "boss") return ["marshal"];
+    const elite = room.type === "elite";
+    const random = roomRandom(room.id,1);
+    const count = Math.max(1,5+ceil(completed,2)+(elite ? 0 : random(7)-2));
+    const kinds = ["thief","rebel","archer","heavy"];
+    let heavy = 0;
+    const wave = Array.from({length:count},(_,index) => {
+        const kind = kinds[(index+room.x+2*room.y)%4];
+        return kind === "heavy" && heavy++ >= 2 ? "rebel" : kind;
+    });
+    if (elite) wave.push("cavalry");
+    return wave;
+}
+function rollLoot(id,index,surrounded) {
+    const roll = roomRandom(id,3+index)(100);
+    if (roll >= 60 && roll < 76) return ["purge","tonic","fury","guard"][Math.floor((roll-60)/4)];
+    if (roll < 1 || roll >= 60) return null;
+    if (roll < (surrounded ? 11 : 6)) return "skill";
+    return roll < 21 || roll % 2 === 0 ? "heal" : "gold";
+}
+class Enemy {
+    constructor(kind, position, surrounded) {
+        this.kind = kind;
+        this.spec = ENEMIES[kind];
+        this.position = position;
+        this.surrounded = surrounded && kind !== "marshal";
+        this.maxHp = percent(this.spec.hp, this.surrounded ? 120 : 100);
+        this.hp = this.maxHp;
+        this.defense = this.spec.defense + (this.surrounded ? 1 : 0);
+        this.recovery = kind === "marshal" ? 1000 : 350;
+        this.cooldowns = {};
+        this.attack = null;
+        this.stabs = 0;
+        this.sweeping = false;
+    }
+    get rage() {
+        return (this.kind === "marshal" && this.hp*2 < this.maxHp) ||
+            (this.kind === "cavalry" && this.hp*10 < this.maxHp*3);
+    }
+    get speed() {
+        const base = percent(this.spec.speed,this.surrounded ? 120 : 100);
+        return percent(base,this.rage ? this.kind === "cavalry" ? 150 : 120 : 100);
+    }
+}
+
+class Arena {
+    facing = vector(0,-1);
+    dashCd = 0;
+    dashMs = 0;
+    dashDirection = vector(0,0);
+    invincible = 0;
+    skillCd = 0;
+    stunned = 0;
+    hurt = 0;
+    clock = 0;
+    gold = 0;
+    action = null;
+    strike = null;
+    bullets = [];
+    freeBullets = [];
+    broken = [];
+    constructor(room,wave,fighter,surrounded,danger,approach,previous,emit = () => {}) {
+        this.emit = emit;
+        this.fighter = fighter;
+        this.surrounded = surrounded;
+        this.danger = danger;
+        this.random = roomRandom(room.id,2);
+        this.dashCd = previous?.dashCd ?? 0;
+        this.skillCd = previous?.skillCd ?? 0;
+        const boss = room.type === "boss";
+        this.player = approach ? door(...approach,255) : vector(WORLD.w/2,boss ? WORLD.h-160 : WORLD.h/2);
+        this.pots = boss ? [] : [vector(320,275),vector(WORLD.w-325,WORLD.h-275)];
+        this.potMask = room.pots;
+        const slots = Array.from({length:24},(_,i) => vector(220+i%6*285,160+Math.floor(i/6)*300))
+            .filter(point => distance(point,this.player) > 430 &&
+                (Math.abs(point.x-WORLD.w/2)>115 || Math.abs(point.y-WORLD.h/2)>115))
+            .map(point => ({point,order:this.random()})).sort((a,b) => a.order-b.order);
+        this.enemies = wave.map((kind,i) => new Enemy(kind,
+            kind === "marshal" ? vector(WORLD.w/2,430) : slots[i].point,surrounded));
+        this.hasBattle = wave.length > 0;
+    }
+    get cleared() { return this.hasBattle && !this.enemies.length; }
+    tick(ms,input) {
+        this.clock += ms;
+        for (const key of ["dashCd","skillCd","stunned","invincible","hurt"]) this[key] = Math.max(0,this[key]-ms);
+        if (this.strike && this.clock >= this.strike.until) this.strike = null;
+        this.movePlayer(ms,input);
+        this.playerAttack(ms,input);
+        for (const enemy of this.enemies) if (enemy.hp > 0) this.updateEnemy(enemy,ms);
+        this.updateBullets(ms);
+        this.enemies = this.enemies.filter(enemy => enemy.hp > 0);
+        if (this.cleared) this.clearBullets();
+    }
+    clearBullets() {
+        for (const bullet of this.bullets) this.freeBullets.push(bullet);
+        this.bullets.length = 0;
+    }
+    movePlayer(ms,input) {
+        const movement = unit(input.move);
+        const aim = unit(sub(input.aim,this.player));
+        if (length(aim)) this.facing = aim;
+        if (input.dash && !this.dashCd && !this.stunned) {
+            this.dashDirection = length(movement) ? movement : this.facing;
+            this.dashCd = 5000;
+            this.invincible = 1000;
+            this.dashMs = 210;
+            this.emit("dash",this.player);
+        }
+        if (this.stunned) return;
+        const dash = Math.min(ms,this.dashMs);
+        this.dashMs -= dash;
+        const travel = add(scale(this.dashDirection,dash*1.375),scale(movement,(ms-dash)*.5*(100+this.fighter.speedBonus)/100));
+        let next = contain(add(this.player,travel),WORLD.player);
+        const boss = this.enemies.find(enemy => enemy.kind === "marshal" && enemy.hp > 0);
+        if (boss && distance(next,boss.position) < boss.spec.radius+WORLD.player) {
+            const away = unit(sub(next,boss.position));
+            next = contain(add(boss.position,scale(length(away) ? away : scale(this.facing,-1),boss.spec.radius+WORLD.player)),WORLD.player);
+        }
+        this.player = next;
+    }
+    playerAttack(ms,input) {
+        if (this.action) {
+            const action = this.action;
+            action.left = Math.max(0,action.left-ms);
+            if (!action.hit && action.left <= action.at) {
+                action.hit = true;
+                if (!this.stunned && this.fighter.hp > 0) this.resolvePlayerAttack(action);
+            }
+            if (!action.left) this.action = null;
+        }
+        if (this.stunned) return;
+        if (input.skill && !this.skillCd && (!this.action || (!this.action.skill && this.action.left <= 200))) {
+            this.skillCd = 9000;
+            this.action = {skill:true,left:430,at:180,hit:false,facing:this.facing};
+            this.emit("skill",this.player);
+        } else if (input.strike && !this.action) {
+            this.action = {skill:false,left:450,at:300,hit:false,facing:this.facing};
+            this.emit("swing",this.player);
+        }
+    }
+    resolvePlayerAttack(action) {
+        const reach = action.skill ? 260 : 200;
+        const angle = action.skill ? 60 : 100;
+        const fighter = this.fighter;
+        let power = percent(24+fighter.strength+fighter.boost+fighter.effects.attack,this.surrounded ? 150 : 100);
+        if (action.skill) power = percent(power,180);
+        this.strike = {origin:this.player,facing:action.facing,reach,angle,until:this.clock+120};
+        const hits = (point,radius) => inFan(this.player,action.facing,point,reach,angle,radius);
+        for (const enemy of this.enemies) {
+            if (enemy.hp <= 0 || !hits(enemy.position,enemy.spec.radius)) continue;
+            this.hitEnemy(enemy,damage(power,enemy.defense,(action.skill ? 0 : 4)+fighter.penetrationBonus));
+            fighter.battle = Math.min(100,fighter.battle+6);
+            if (action.skill && !enemy.hp) {
+                this.skillCd = Math.max(0,this.skillCd-1000);
+                fighter.heal(percent(fighter.maxHp,1));
+            }
+        }
+        for (let i=0; i<this.pots.length; i++) {
+            if ((this.potMask & (1 << i)) || !hits(this.pots[i],24)) continue;
+            this.potMask |= 1 << i;
+            this.broken.push(i);
+        }
+    }
+    hitEnemy(enemy,amount) {
+        enemy.hp = Math.max(0,enemy.hp-amount);
+        this.emit("hit",enemy.position,amount);
+        if (!enemy.hp) {
+            this.gold += enemy.spec.gold;
+            this.emit("kill",enemy.position);
+        }
+    }
+    hitPlayer(power,stun=0,impact=null) {
+        if (this.invincible || !this.fighter.hp) return;
+        const amount = damage(power,5+this.fighter.defenseBonus+(this.surrounded ? 5 : 0));
+        this.fighter.hit(amount);
+        this.emit("hurt",this.player,amount);
+        if (impact) this.emit("impact",impact);
+        this.stunned = Math.max(this.stunned,stun);
+        this.hurt = 175;
+    }
+
+    updateEnemy(enemy,ms) {
+        const offset = sub(this.player,enemy.position);
+        const range = length(offset);
+        const facing = unit(offset);
+        if (enemy.attack) {
+            this.progressAttack(enemy,facing,ms);
+            return;
+        }
+        enemy.recovery = Math.max(0,enemy.recovery-ms);
+        if (enemy.recovery) return;
+        const kind = this.chooseMove(enemy,range);
+        if (kind) {
+            const shots = kind === "ring" ? (enemy.rage ? 16 : 12)+(this.danger ? 2 : 0) :
+                kind === "volley" ? (enemy.rage ? 4 : 3) : kind === "spiral" ? 14 : 1;
+            enemy.attack = {kind, spec:MOVES[kind], facing:range ? facing : vector(1,0),
+                shots, elapsed:0, fired:0, hit:false};
+            if (enemy.kind === "cavalry") enemy.stabs = kind === "lance" ? enemy.stabs+1 : 0;
+            if (enemy.kind === "marshal") this.emit("bossWarning",enemy.position);
+            return;
+        }
+        const stoppingDistance = {archer:720,marshal:420,heavy:95}[enemy.kind] ?? 67;
+        if (range <= stoppingDistance) return;
+        let spacing = vector(0,0);
+        for (const other of this.enemies) {
+            if (other === enemy || other.hp <= 0) continue;
+            const away = sub(enemy.position,other.position);
+            if (dot(away,away) < 88*88) spacing = add(spacing,scale(unit(away),.58));
+        }
+        enemy.position = contain(add(enemy.position,scale(unit(add(facing,spacing)),enemy.speed*ms/1000)),enemy.spec.radius);
+    }
+    chooseMove(enemy,range) {
+        const ready = key => this.clock >= (enemy.cooldowns[key] ?? 0);
+        switch (enemy.kind) {
+            case "thief": return range <= 132 && !this.invincible && ready("stab") ? "stab" : null;
+            case "rebel": return range <= 172 && ready("cleave") ? "cleave" : null;
+            case "archer": return range <= 800 && ready("arrow") ? "arrow" : null;
+            case "heavy": {
+                const kind = enemy.sweeping ? "sweep" : "slam";
+                return range <= MOVES[kind].reach && ready(kind) ? kind : null;
+            }
+            case "cavalry": {
+                const options = [];
+                if (range <= 217 && enemy.stabs < 4 && ready("lance")) options.push(["lance",70]);
+                if (range <= 282 && ready("horseSweep")) options.push(["horseSweep",20]);
+                if (range >= 400 && ready("charge")) options.push(["charge",10]);
+                if (range >= 235 && range <= 700 && ready("scatter")) options.push(["scatter",14]);
+                if (!options.length) return null;
+                let roll = this.random(options.reduce((sum,[,weight]) => sum+weight,0));
+                for (const [kind,weight] of options) {
+                    if (roll < weight) return kind;
+                    roll -= weight;
+                }
+                return null;
+            }
+            default:
+                if (range <= enemy.spec.radius+250 && ready("bossSlash")) return "bossSlash";
+                if (ready("ring")) return "ring";
+                if (enemy.rage && ready("spiral")) return "spiral";
+                if (enemy.rage && ready("wall")) return "wall";
+                if (ready("volley")) return "volley";
+                return ready("homing") ? "homing" : null;
+        }
+    }
+    attackPower(enemy,attack) {
+        let power = attack.spec.power;
+        if (attack.kind === "charge") {
+            const speedPercent = ceil(percent(enemy.speed,150)*100,enemy.spec.speed);
+            power += ceil(Math.max(0,speedPercent-100),20);
+        }
+        if (enemy.surrounded || (this.danger && enemy.kind === "marshal")) power = percent(power,120);
+        return power;
+    }
+    progressAttack(enemy,facing,ms) {
+        const attack = enemy.attack;
+        const before = attack.elapsed;
+        attack.elapsed += ms;
+        const windup = attack.spec.windup;
+        const follows = ["arrow","charge","volley"].includes(attack.kind);
+        if (follows && before < windup && length(facing)) attack.facing = facing;
+        if (attack.elapsed < windup) return;
+        const power = this.attackPower(enemy,attack);
+        if (attack.kind === "charge") {
+            const motion = Math.min(720,attack.elapsed-windup)-clamp(before-windup,0,720);
+            const from = enemy.position;
+            enemy.position = contain(add(from,scale(attack.facing,percent(enemy.speed,150)*motion/1000)),enemy.spec.radius);
+            if (!attack.hit && !this.invincible && segmentDistance(this.player,from,enemy.position) <= 100+WORLD.player) {
+                this.hitPlayer(power,attack.spec.stun);
+                attack.hit = true;
+            }
+            if (attack.elapsed < windup+720) return;
+        } else if (attack.kind === "volley" || attack.kind === "spiral") {
+            const spiral = attack.kind === "spiral";
+            const interval = spiral ? 100 : 400;
+            while (attack.fired < attack.shots && attack.elapsed >= windup+attack.fired*interval) {
+                const direction = spiral ? pointAt(directionAngle(attack.facing)+attack.fired*Math.PI/5) : attack.facing;
+                this.shoot(enemy,direction,spiral ? 370 : 600,power,false,spiral ? "spiral" : "line");
+                attack.fired++;
+            }
+            if (attack.fired < attack.shots) return;
+        } else {
+            this.resolveEnemyAttack(enemy,attack,power);
+        }
+        enemy.cooldowns[attack.kind] = this.clock+attack.spec.cooldown;
+        enemy.recovery = attack.spec.recovery;
+        enemy.attack = null;
+    }
+    resolveEnemyAttack(enemy,attack,power) {
+        const spec = attack.spec;
+        switch (attack.kind) {
+            case "arrow":
+                this.shoot(enemy,attack.facing,500,power,true);
+                return;
+            case "homing":
+                this.shoot(enemy,attack.facing,410,power,false,"homing");
+                return;
+            case "scatter": {
+                const angle = directionAngle(attack.facing);
+                for (let shot=-3; shot<=3; shot++) this.shoot(enemy,pointAt(angle+shot*Math.PI/13),430,power,false,"scatter");
+                return;
+            }
+            case "wall": {
+                const side = vector(-attack.facing.y,attack.facing.x);
+                for (let laneIndex=-5; laneIndex<=5; laneIndex++) {
+                    if (!laneIndex) continue;
+                    const origin = contain(add(enemy.position,scale(side,laneIndex*117)),18);
+                    this.shoot(enemy,attack.facing,345,power,false,"wall",origin);
+                }
+                return;
+            }
+            case "ring": {
+                const angle = directionAngle(attack.facing);
+                for (let shot=0; shot<attack.shots; shot++)
+                    this.shoot(enemy,pointAt(angle+shot*2*Math.PI/attack.shots),300,power,false);
+                return;
+            }
+            case "slam":
+                for (const other of this.enemies) {
+                    if (other !== enemy && other.hp > 0 && distance(other.position,enemy.position) <= spec.reach+other.spec.radius)
+                        this.hitEnemy(other,damage(power,other.defense));
+                }
+                enemy.sweeping = true;
+                break;
+            case "sweep": enemy.sweeping = false; break;
+        }
+        const reach = spec.reach+(enemy.kind === "marshal" ? enemy.spec.radius : 0);
+        if (inFan(enemy.position,attack.facing,this.player,reach,spec.angle,WORLD.player)) this.hitPlayer(power,spec.stun);
+        if (enemy.kind === "heavy") enemy.cooldowns[enemy.sweeping ? "sweep" : "slam"] = this.clock+1000;
+    }
+    shoot(enemy,facing,speed,power,arrow,pattern="line",origin=enemy.position) {
+        this.emit("shot",enemy.position);
+        const bullet = this.freeBullets.pop() ?? {};
+        Object.assign(bullet,{position:contain(add(origin,scale(facing,enemy.spec.radius+8)),10),
+            velocity:scale(facing,speed),speed,power,arrow,pattern,left:5500});
+        this.bullets.push(bullet);
+    }
+    updateBullets(ms) {
+        for (let i=this.bullets.length-1; i>=0; i--) {
+            const bullet = this.bullets[i];
+            if (bullet.pattern === "spiral") {
+                bullet.velocity = scale(pointAt(directionAngle(bullet.velocity)+ms/1050),bullet.speed);
+            } else if (bullet.pattern === "homing" && bullet.left > 3050) {
+                const current = directionAngle(bullet.velocity);
+                const delta = directionAngle(sub(this.player,bullet.position))-current;
+                const turn = clamp(Math.atan2(Math.sin(delta),Math.cos(delta)),-ms/850,ms/850);
+                bullet.velocity = scale(pointAt(current+turn),bullet.speed);
+            }
+            const next = add(bullet.position,scale(bullet.velocity,ms/1000));
+            bullet.left -= ms;
+            const hit = !this.invincible && segmentDistance(this.player,bullet.position,next) <= WORLD.player+11;
+            if (hit) this.hitPlayer(bullet.power,0,next);
+            if (hit || bullet.left <= 0 || next.x<0 || next.x>WORLD.w || next.y<0 || next.y>WORLD.h) {
+                this.bullets.splice(i,1);
+                this.freeBullets.push(bullet);
+            } else bullet.position = next;
+        }
+    }
+}
+
+class Run {
+    board = new Board();
+    fighter = new Fighter();
+    wallet = new Wallet();
+    phase = "preview";
+    remaining = RUN_LIMIT;
+    danger = false;
+    timeoutEffect = "";
+    id = newRunId();
+    current = START;
+    arena = null;
+    inside = new Set();
+    mapVersion = 0;
+    result = null;
+    notice = "";
+    noticeMs = 0;
+    queued = false;
+    upgradedAttack = false;
+    skills = 0;
+    mined = 0;
+    roomGold = 0;
+    stats = {auto:0,manual:0,kills:0,market:0,builds:0,materials:0};
+    villageEvent = null;
+    inventory = {purge:0,tonic:0,fury:0};
+    relics = new Set();
+    refreshes = 0;
+    shopOffers = null;
+    constructor(emit = () => {},variant = Math.floor(Math.random()*10000)) {
+        this.emit = emit;
+        this.variant = variant;
+    }
+    get room() { return this.board.rooms.get(this.current); }
+    get active() { return this.phase === "explore" || this.phase === "boss"; }
+    get canTravel() { return this.phase === "explore" && this.room.done; }
+    start() {
+        if (this.phase !== "preview") return;
+        this.phase = "explore";
+        this.enter(START);
+        this.hint("初始建材 ×1。按 B 建造，靠近亮门按 E，或打开棋盘选房。");
+    }
+    hint(message) {
+        this.notice = message;
+        this.noticeMs = 3800;
+    }
+    complete(room) {
+        room.done = true;
+        this.inside = this.board.enclosed();
+        this.mapVersion++;
+    }
+    enter(id,approach) {
+        this.current = id;
+        this.mapVersion++;
+        const room = this.room;
+        const surrounded = this.inside.has(id) && this.board.entry(START,id);
+        if (!room.done && ["r","village","merchant"].includes(room.type)) this.complete(room);
+        const wave = room.done ? [] : makeWave(room,this.board.count);
+        this.arena = new Arena(room,wave,this.fighter,surrounded,this.danger,approach,this.arena,this.emit);
+        this.emit("room",room.id);
+        this.roomGold = 0;
+        if (surrounded && room.type !== "boss") this.stats.manual++;
+        if (surrounded) this.hint(room.type === "boss" ? "围住棋帅，攻击和防御增强。" : "自主探索 · 背水一战，双方强化。");
+    }
+    walk(target) {
+        if (!this.canTravel || !this.board.neighbors(this.current).includes(target)) return false;
+        const [x,y] = cell(target);
+        const approach = [this.room.x-x,this.room.y-y];
+        this.advance(5000);
+        if (this.phase === "boss") return true;
+        if (target === BOSS) this.enterBoss(false,approach);
+        else this.enter(target,approach);
+        return true;
+    }
+    teleport(target) {
+        if (!this.canTravel) return false;
+        const cost = this.board.transport(this.current,target);
+        if (cost === null || cost > this.remaining) return false;
+        this.advance(cost);
+        if (this.phase === "boss") return true;
+        if (target === BOSS) this.enterBoss(false);
+        else this.enter(target);
+        return true;
+    }
+    autoPrice(target) {
+        if (!this.canTravel || !this.inside.has(target) || !this.board.entry(this.current,target)) return 0;
+        return {fight:10,elite:18}[this.board.rooms.get(target).type] ?? 0;
+    }
+    auto(target) {
+        const price = this.autoPrice(target);
+        if (!price || !this.wallet.spend(price)) return false;
+        const room = this.board.rooms.get(target);
+        let gold = makeWave(room,this.board.count).reduce((sum,kind) => sum+ENEMIES[kind].gold,0);
+        for (let i=0; i<2; i++) {
+            if (room.pots & (1 << i)) continue;
+            const loot = rollLoot(target,i,false);
+            if (loot === "gold") gold += 3;
+            else if (loot === "skill") this.skills++;
+            else if (loot) this.collect(loot);
+            room.pots |= 1 << i;
+        }
+        const reward = this.wallet.earn(gold);
+        this.stats.kills += reward;
+        this.stats.auto++;
+        this.complete(room);
+        this.hint("自动探索完成。已支付 " + price + " 金币，常规奖励 +" + reward + " 金币。");
+        return true;
+    }
+    enterBoss(danger,approach) {
+        if (this.phase !== "explore") return;
+        this.danger = danger;
+        this.phase = "boss";
+        this.enter(BOSS,approach);
+        if (danger) {
+            this.timeoutEffect = roomRandom(BOSS,7)(2) ? "冲刺冷却多 1 秒" : "金币获取少 10%";
+            this.hint("探索时间耗尽。棋帅伤害提高，环射多 2 发。");
+        }
+    }
+    advance(ms) {
+        if (this.phase !== "explore") return;
+        const elapsed = Math.min(this.remaining,ms);
+        this.remaining -= elapsed;
+        this.produce(elapsed);
+        if (!this.remaining) this.enterBoss(true);
+    }
+
+
+    hasBuilding(type) {
+        for (const room of this.board.rooms.values()) if (room.building === type) return true;
+        return false;
+    }
+    produce(ms) {
+        const area = Math.floor(this.board.count/3)*10;
+        for (const room of this.board.rooms.values()) {
+            const type = room.building;
+            let period = {market:20000,factory:this.queued ? 25000 : 0,mine:this.mined<6 ? 35000 : 0,village:5000}[type] ?? 0;
+            if (!period) continue;
+            if (room.level === 2) period = percent(period,75);
+            room.progress += ms;
+            while (room.progress >= period) {
+                room.progress -= period;
+                switch (type) {
+                    case "market": this.stats.market += this.wallet.earn(percent(4,100+area)); break;
+                    case "factory":
+                        this.wallet.materials++;
+                        this.stats.materials++;
+                        this.queued = false;
+                        room.progress = 0;
+                        this.hint("建材厂完工。建材 +1。");
+                        break;
+                    case "mine":
+                        this.wallet.ore++;
+                        if (++this.mined >= 6) room.progress = 0;
+                        break;
+                    case "village": this.fighter.mood = Math.min(100,this.fighter.mood+ceil(20*(100+this.fighter.hero.villageMoodBonus)*(100+area),10000)); break;
+                }
+            }
+        }
+    }
+    canBuild(type) {
+        if (!this.canTravel || !this.wallet.materials || this.room.building) return false;
+        if (this.room.type === "village") return type === "village";
+        return this.room.type === "r" && (type === "market" ||
+            (["factory","mine"].includes(type) && !this.hasBuilding(type)));
+    }
+    build(type) {
+        if (!this.canBuild(type)) return false;
+        this.wallet.materials--;
+        this.room.building = type;
+        this.room.level = 1;
+        this.stats.builds++;
+        this.emit("build");
+        if (type === "village") {
+            this.villageEvent = weightedChoice(VILLAGE_EVENTS,roomRandom(this.current,40+this.variant)).id;
+        }
+        this.hint(type === "village" ? "村庄点灯，每 5 秒积攒氛围。" : BUILDINGS[type]+"建成。");
+        return true;
+    }
+    get pendingVillageEvent() {
+        return this.room.type === "village" ? VILLAGE_EVENTS.find(event => event.id === this.villageEvent) : null;
+    }
+    acceptVillageEvent() {
+        const event = this.pendingVillageEvent;
+        if (!this.canTravel || !event) return false;
+        this.villageEvent = null;
+        event.grant(this);
+        this.emit("pickup",this.arena.player);
+        this.hint(event.name+" · 已领取。");
+        return true;
+    }
+    upgrade() {
+        if (!this.canTravel || this.room.level !== 1 || !this.wallet.materials) return false;
+        this.wallet.materials--;
+        this.room.level = 2;
+        this.emit("build");
+        this.hint(BUILDINGS[this.room.building]+"升到 2 级。");
+        return true;
+    }
+    orderMaterial() {
+        if (!this.canTravel || this.queued || !this.hasBuilding("factory") || !this.wallet.spend(8)) return false;
+        this.queued = true;
+        this.hint("建材厂开始制材。");
+        return true;
+    }
+    get canTrade() { return this.canTravel && this.room.type === "merchant"; }
+    get refreshPrice() { return 8+4*this.refreshes; }
+    createStock() {
+        const tier = Math.min(4,1+this.refreshes+Math.floor(this.board.count/5));
+        const random = roomRandom(this.current,65+this.variant+this.refreshes*13);
+        const pool = [...SHOP_CATALOG];
+        this.shopOffers = [];
+        for (let index=0; index<2; index++) {
+            const item = weightedChoice(pool,random);
+            pool.splice(pool.indexOf(item),1);
+            this.shopOffers.push({id:item.id,quantity:tier,price:item.price+(tier-1)*(item.price-2),sold:false});
+        }
+        if (tier >= 2) {
+            const affix = weightedChoice(SHOP_AFFIXES,random);
+            this.shopOffers.push({id:affix.id,quantity:affix.amount*tier,price:affix.price+6*(tier-1),sold:false});
+        }
+        return this.shopOffers;
+    }
+    get offers() { return this.shopOffers ?? this.createStock(); }
+    refreshShop() {
+        if (!this.canTrade || !this.wallet.spend(this.refreshPrice)) return false;
+        this.refreshes++;
+        this.createStock();
+        this.hint("行商已换货。商品随探索进度与刷新次数提升。");
+        return true;
+    }
+    canBuyOffer(offer) {
+        if (!this.canTrade || offer.sold || this.wallet.gold < offer.price) return false;
+        const affix = AFFIX_BY_ID[offer.id];
+        if (affix) return affix.id !== "swift" || this.fighter.speedBonus+offer.quantity <= 60;
+        return Boolean(CONSUMABLES[offer.id]) && this.inventory[offer.id]+offer.quantity <= 5;
+    }
+    buyOffer(id) {
+        const offer = this.offers.find(item => item.id === id);
+        if (!offer || !this.canBuyOffer(offer)) return false;
+        this.wallet.spend(offer.price);
+        const affix = AFFIX_BY_ID[id];
+        if (affix) {
+            this.fighter[affix.field] += offer.quantity;
+            if (affix.id === "vigor") this.fighter.heal(offer.quantity);
+        } else this.addItem(id,offer.quantity);
+        offer.sold = true;
+        this.emit("pickup",this.arena.player);
+        this.hint("购得"+this.offerLabel(offer)+"。");
+        return true;
+    }
+    offerLabel(offer) {
+        const affix = AFFIX_BY_ID[offer.id];
+        return affix ? affix.name+" · 本局"+affix.stat+" +"+offer.quantity+(affix.unit ?? "") :
+            CONSUMABLES[offer.id].name+" ×"+offer.quantity;
+    }
+    trade(kind) {
+        if (!this.canTrade) return false;
+        if (kind === "loan" && this.wallet.borrow()) {
+            this.hint("建材 +1，之后的每笔金币收入按八成向上取整。");
+            return true;
+        }
+        if (kind === "material" && this.wallet.spend(12)) {
+            this.wallet.materials++;
+            this.hint("购得建材 ×1。");
+            return true;
+        }
+        if (kind === "attack" && !this.upgradedAttack && this.wallet.spend(20)) {
+            this.upgradedAttack = true;
+            this.fighter.strength += 8;
+            this.hint("唐刀攻击 +8。");
+            return true;
+        }
+        return false;
+    }
+    ultimate() {
+        if (!this.active || this.arena.stunned) return false;
+        if (this.fighter.ultimate()) {
+            this.emit("ultimate",this.arena.player);
+            this.hint("大招已开启。攻击 +" + this.fighter.boost + "，持续 10 秒。");
+            return true;
+        }
+        const missing = [this.fighter.mood<100 && "氛围值",this.fighter.battle<100 && "战斗值"].filter(Boolean);
+        this.hint("大招还缺" + missing.join("和") + "。");
+        return false;
+    }
+    chooseSkill(attack) {
+        if (!this.active || !this.skills) return false;
+        this.skills--;
+        if (attack) this.fighter.strength += 2;
+        else {
+            this.fighter.maxHp += 10;
+            this.fighter.heal(10);
+        }
+        return true;
+    }
+    get itemCount() { return Object.values(this.inventory).reduce((sum,count) => sum+count,0); }
+    addItem(kind,amount=1) {
+        const item = CONSUMABLES[kind];
+        if (!item || this.inventory[kind]+amount > 5) return false;
+        this.inventory[kind] += amount;
+        return true;
+    }
+    useItem(kind) {
+        const item = CONSUMABLES[kind];
+        if (!this.active || !item || !this.inventory[kind]) return false;
+        if (kind === "purge" && !this.arena.bullets.length) {
+            this.hint("场上没有可清除的弹幕。");
+            return false;
+        }
+        this.inventory[kind]--;
+        item.use(this);
+        this.emit("pickup",this.arena.player);
+        this.hint(item.name+" · "+item.description+"。");
+        return true;
+    }
+    collect(kind) {
+        this.emit("pickup",this.arena.player);
+        if (CONSUMABLES[kind]) {
+            const item = CONSUMABLES[kind];
+            if (this.addItem(kind)) this.hint("获得"+item.name+"。按 "+item.key+" 使用。");
+            else this.hint(item.name+"已满，最多携带 5 个。");
+            return;
+        }
+        if (RELICS[kind]) {
+            if (this.relics.has(kind)) this.hint("本局已装备"+RELICS[kind].name+"。");
+            else {
+                this.relics.add(kind);
+                this.fighter.defenseBonus += 3;
+                this.hint(RELICS[kind].name+" · "+RELICS[kind].description+"。");
+            }
+            return;
+        }
+        if (kind === "heal") this.fighter.heal(10);
+        if (kind === "skill") {
+            this.skills++;
+            this.hint("获得技能球。按 V 选择，或继续战斗。");
+        }
+        if (kind === "gold") {
+            if (this.room.done) this.stats.kills += this.wallet.earn(3);
+            else this.roomGold += 3;
+        }
+    }
+    tick(ms,input) {
+        if (!this.active) return;
+        this.noticeMs = Math.max(0,this.noticeMs-ms);
+        if (!this.noticeMs) this.notice = "";
+        const arena = this.arena;
+        this.advance(ms);
+        if (arena !== this.arena) return;
+        const fighter = this.fighter;
+        fighter.tick(ms);
+        arena.tick(ms,input);
+        const room = this.room;
+        for (const index of arena.broken) {
+            room.pots = arena.potMask;
+            const kind = rollLoot(this.current,index,arena.surrounded);
+            if (kind) room.loot.push({kind,position:arena.pots[index]});
+        }
+        arena.broken.length = 0;
+        if (!fighter.hp) {
+            this.finish(false);
+            return;
+        }
+        for (let i=room.loot.length-1; i>=0; i--) {
+            if (distance(room.loot[i].position,arena.player) > 64) continue;
+            this.collect(room.loot[i].kind);
+            room.loot.splice(i,1);
+        }
+        if (!arena.cleared || room.done) return;
+        this.complete(room);
+        if (this.phase === "boss") {
+            this.finish(true);
+            return;
+        }
+        this.stats.kills += this.wallet.earn(arena.gold+this.roomGold);
+        this.roomGold = 0;
+        fighter.heal(percent(fighter.maxHp,15+fighter.hero.roomRecoveryBonus));
+        this.hint("房间点亮。靠近亮门按 E，或按 Tab 选房。");
+    }
+    finish(won) {
+        if (!this.active) return;
+        this.result = {won,rooms:this.board.count,ore:this.wallet.ore,remaining:this.remaining, danger:this.danger,
+            timeoutEffect:this.timeoutEffect, ...this.stats};
+        this.phase = "result";
+        this.wallet.gold = this.wallet.materials = this.wallet.ore = 0;
+        this.fighter.mood = this.fighter.battle = this.fighter.strength = this.fighter.shield = this.skills = 0;
+        for (const kind of Object.keys(this.inventory)) this.inventory[kind] = 0;
+        this.relics.clear();
+        this.fighter.defenseBonus = this.fighter.penetrationBonus = this.fighter.speedBonus = 0;
+        this.fighter.effects = new StatusEffects();
+        for (const room of this.board.rooms.values()) room.loot.length = 0;
+    }
+}
+
+const STATS_PREFIX = "guancheng.web.v2.result.";
+const RESULT_COUNTERS = ["rooms","ore","builds","auto","manual"];
+const ACHIEVEMENTS = [
+    {name:"初布棋局",goal:"完成 1 局",counter:"runs",minimum:1},
+    {name:"此关已开",goal:"击败镇关棋帅 1 次",counter:"wins",minimum:1},
+    {name:"围局成形",goal:"完成 1 次围住探索",counter:"enclosed",minimum:1},
+    {name:"灯火相连",goal:"累计建成 3 座建筑",counter:"builds",minimum:3},
+    {name:"矿脉初开",goal:"累计带出 6 矿石",counter:"ore",minimum:6}
+];
+class Career {
+    saved = new Map();
+    pending = new Map();
+    restricted = false;
+    constructor(access) { this.access = access; }
+    sync() {
+        try {
+            const storage = this.access();
+            const recorded = new Map();
+            for (let index=0; index<storage.length; index++) {
+                const key = storage.key(index);
+                if (!key?.startsWith(STATS_PREFIX)) continue;
+                try {
+                    const record = JSON.parse(storage.getItem(key));
+                    if (typeof record?.won === "boolean" &&
+                        RESULT_COUNTERS.every(field => Number.isSafeInteger(record[field]) && record[field]>=0))
+                        recorded.set(key.slice(STATS_PREFIX.length),record);
+                } catch {}
+            }
+            this.saved = recorded;
+            this.restricted = false;
+            for (const [id,record] of this.pending) {
+                const key = STATS_PREFIX+id;
+                if (!recorded.has(id)) {
+                    if (!writeLocal(this.access,key,JSON.stringify(record))) {
+                        this.restricted = true;
+                        continue;
+                    }
+                    recorded.set(id,record);
+                }
+                this.pending.delete(id);
+            }
+        } catch { this.restricted = true; }
+    }
+    record(id,result) {
+        if (!this.saved.has(id) && !this.pending.has(id)) {
+            this.pending.set(id,{won:result.won,...Object.fromEntries(RESULT_COUNTERS.map(key => [key,result[key]]))});
+        }
+        this.sync();
+    }
+    get totals() {
+        const outcomes = new Map([...this.pending,...this.saved]).values();
+        const totals = {runs:0,wins:0,rooms:0,ore:0,builds:0,enclosed:0};
+        for (const row of outcomes) {
+            totals.runs++;
+            totals.wins += Number(row.won);
+            totals.rooms += row.rooms;
+            totals.ore += row.ore;
+            totals.builds += row.builds;
+            totals.enclosed += row.auto+row.manual;
+        }
+        return totals;
+    }
+}
+
+const RUN_SAVE_KEY = "guancheng.web.v2.run";
+const SAVE_FIELDS = {
+    run:["id","phase","remaining","danger","timeoutEffect","current","variant","queued","upgradedAttack",
+        "skills","mined","roomGold","stats","villageEvent","inventory","refreshes","shopOffers","notice","noticeMs"],
+    room:["id","done","building","level","progress","pots","loot"],
+    fighter:["hp","maxHp","shield","shieldMs","mood","battle","strength","defenseBonus",
+        "penetrationBonus","speedBonus","boost","boostMs"],
+    wallet:["gold","materials","ore","borrowed"],
+    arena:["facing","player","dashCd","dashMs","dashDirection","invincible","skillCd","stunned","hurt",
+        "clock","gold","action","strike","bullets","potMask","hasBattle","surrounded"],
+    enemy:["kind","position","surrounded","maxHp","hp","defense","recovery","cooldowns","attack","stabs","sweeping"]
+};
+function fields(source,keys) {
+    return Object.fromEntries(keys.map(key => [key,source[key]]));
+}
+function restoreFields(target,source,keys) {
+    if (!source || !keys.every(key => Object.hasOwn(source,key))) throw new Error("存档字段不完整");
+    for (const key of keys) target[key] = source[key];
+}
+function listOf(value,max) { return Array.isArray(value) && value.length <= max; }
+function runSnapshot(run) {
+    const arena = run.arena;
+    return {
+        version:1, run:fields(run,SAVE_FIELDS.run),
+        rooms:[...run.board.rooms.values()].map(room => fields(room,SAVE_FIELDS.room)),
+        fighter:fields(run.fighter,SAVE_FIELDS.fighter), effects:run.fighter.effects.active,
+        wallet:fields(run.wallet,SAVE_FIELDS.wallet), relics:[...run.relics],
+        arena:fields(arena,SAVE_FIELDS.arena),
+        enemies:arena.enemies.map(enemy => fields(enemy,SAVE_FIELDS.enemy)),
+        random:arena.random.snapshot()
+    };
+}
+function resumeSnapshot(data,emit) {
+    const saved = data?.run;
+    if (data?.version !== 1 || !saved || !["explore","boss"].includes(saved.phase) ||
+        !/^[a-z0-9-]{1,96}$/i.test(saved.id) || !Number.isInteger(saved.remaining) ||
+        saved.remaining < 0 || saved.remaining > RUN_LIMIT ||
+        !Number.isInteger(saved.variant) || saved.variant<0 || saved.variant>=10000 ||
+        !listOf(data.rooms,LAYOUT.length) || !listOf(data.enemies,32) || !listOf(data.arena?.bullets,512) ||
+        !listOf(data.relics,Object.keys(RELICS).length))
+        throw new Error("无效的本局存档");
+    const run = new Run(emit,saved.variant);
+    restoreFields(run,saved,SAVE_FIELDS.run);
+    if (!run.room || (run.phase==="boss") !== (run.current===BOSS)) throw new Error("无效的房间状态");
+    if (data.rooms.length !== run.board.rooms.size || new Set(data.rooms.map(room => room.id)).size !== data.rooms.length)
+        throw new Error("棋盘存档不完整");
+    for (const room of data.rooms) {
+        const target = run.board.rooms.get(room.id);
+        if (!target || !listOf(room.loot,16)) throw new Error("棋盘房间无效");
+        restoreFields(target,room,SAVE_FIELDS.room);
+    }
+    run.inside = run.board.enclosed();
+    restoreFields(run.fighter,data.fighter,SAVE_FIELDS.fighter);
+    for (const id of Object.keys(EFFECTS)) {
+        const effect = data.effects?.[id];
+        if (effect && Number.isInteger(effect.remaining) && effect.remaining>0 && effect.remaining<=EFFECTS[id].duration &&
+            Number.isInteger(effect.elapsed) && effect.elapsed>=0 && effect.elapsed<1000)
+            run.fighter.effects.active[id] = {remaining:effect.remaining,elapsed:effect.elapsed};
+    }
+    restoreFields(run.wallet,data.wallet,SAVE_FIELDS.wallet);
+    run.relics = new Set(data.relics.filter(id => Object.hasOwn(RELICS,id)));
+    run.arena = new Arena(run.room,[],run.fighter,false,run.danger,undefined,undefined,run.emit);
+    restoreFields(run.arena,data.arena,SAVE_FIELDS.arena);
+    run.arena.enemies = data.enemies.map(state => {
+        if (!Object.hasOwn(ENEMIES,state.kind)) throw new Error("敌人配置无效");
+        const enemy = new Enemy(state.kind,state.position,state.surrounded);
+        restoreFields(enemy,state,SAVE_FIELDS.enemy);
+        if (enemy.attack) {
+            if (!Object.hasOwn(MOVES,enemy.attack.kind)) throw new Error("攻击配置无效");
+            enemy.attack.spec = MOVES[enemy.attack.kind];
+        }
+        return enemy;
+    });
+    run.arena.random.restore(data.random);
+    return run;
+}
+class RunSave {
+    constructor(access) { this.access = access; }
+    get data() {
+        try { return JSON.parse(readLocal(this.access,RUN_SAVE_KEY)); }
+        catch { return null; }
+    }
+    get available() { return this.data?.version === 1; }
+    save(run) {
+        return run.active && writeLocal(this.access,RUN_SAVE_KEY,JSON.stringify(runSnapshot(run)));
+    }
+    resume(emit) {
+        try { return resumeSnapshot(this.data,emit); }
+        catch { return null; }
+    }
+    finish(id) {
+        if (this.data?.run?.id === id) writeLocal(this.access,RUN_SAVE_KEY,"null");
+    }
+}
+
+const seconds = ms => ceil(ms,1000);
+function clockLabel(ms) {
+    const time = seconds(ms);
+    return String(Math.floor(time/60)).padStart(2,"0")+":"+String(time%60).padStart(2,"0");
+}
+function worldPoint(rect,x,y) {
+    return vector((x-rect.left)*WORLD.w/rect.width,(y-rect.top)*WORLD.h/rect.height);
+}
+
+if (typeof document === "undefined") {
+    globalThis.GuanCheng = {Board,Run,Fighter,Wallet,Ledger,FrameClock,Arena,GameAudio,SOUND,CombatEffects,HEROES,VILLAGE_EVENTS,weightedChoice,StatusEffects,CONSUMABLES,RELICS,SHOP_CATALOG,SHOP_AFFIXES,ROOM_STYLE,Tutorial,GameOptions,RunSave,RUN_SAVE_KEY,Career,ACHIEVEMENTS,damage,effectiveDefense,flood,
+        roomRandom,makeWave,rollLoot,ENEMIES,MOVES,vector,unit,sub,worldPoint,START,BOSS,SAVE_PREFIX,RUN_LIMIT};
+} else {
+    mount();
+}
+
+function mount() {
+    const byId = id => document.getElementById(id);
+    const screens = ["home","preview","play","result","profile","settings","stats"];
+    const canvas = byId("arena");
+    const overlay = byId("overlay");
+    const dialog = byId("dialog");
+    const dialogBody = byId("dialog-body");
+    const paint = canvas.getContext("2d");
+    const ledger = new Ledger(() => window.localStorage);
+    const clock = new FrameClock();
+    const audio = new GameAudio();
+    const options = new GameOptions(() => window.localStorage);
+    audio.volume(options.volume);
+    let settingsBack = "home";
+    const effects = new CombatEffects();
+    const tutorial = new Tutorial(() => window.localStorage);
+    const runSave = new RunSave(() => window.localStorage);
+    const career = new Career(() => window.localStorage);
+    const reduceMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)");
+    function feedback(kind,point,value) {
+        audio.play(kind);
+        effects.emit(kind,point,value);
+        if (kind === "room" && point !== START) tutorial.mark("door");
+        else if (["dash","skill","build"].includes(kind)) tutorial.mark(kind);
+    }
+    const keys = new Set();
+    let screen = "home";
+    let panel = null;
+    let run = null;
+    let selected = null;
+    let lastPanelState = "";
+    let miniVersion = -1;
+    let aim = vector(WORLD.w/2,WORLD.h/2-200);
+    let heldStrike = false;
+    let strike = false;
+    let skill = false;
+    let dash = false;
+    let pointerId = null;
+    let mousePosition = null;
+    let fit = null;
+
+    function text(id,value) {
+        const element = byId(id);
+        const label = String(value);
+        if (element.textContent !== label) element.textContent = label;
+    }
+    function show(id,visible) { byId(id).hidden = !visible; }
+    function element(tag,label,className) {
+        const node = document.createElement(tag);
+        if (label !== undefined) node.textContent = label;
+        if (className) node.className = className;
+        return node;
+    }
+    function button(label,action,enabled=true,primary=false) {
+        const node = element("button",label,primary ? "primary" : "");
+        node.type = "button";
+        node.disabled = !enabled;
+        node.addEventListener("click",action);
+        return node;
+    }
+    function clearInput() {
+        keys.clear();
+        heldStrike = strike = skill = dash = false;
+        if (pointerId !== null && canvas.hasPointerCapture(pointerId)) canvas.releasePointerCapture(pointerId);
+        pointerId = null;
+    }
+    function change(next,focus) {
+        setPanel(null,false);
+        screen = next;
+        screens.forEach(id => show(id,id === screen));
+        clock.reset();
+        if (focus) byId(focus).focus({preventScroll:true});
+    }
+    function refreshOptions() {
+        byId("volume").value = options.volume;
+        byId("settings-volume").value = options.volume;
+        byId("settings-aim").value = options.sensitivity;
+        byId("settings-hints").checked = options.hints;
+        text("volume-value",options.volume+"%");
+        text("settings-volume-value",options.volume+"%");
+        text("settings-aim-value",options.sensitivity+"%");
+        show("home-keys",options.hints);
+        show("play-keys",options.hints);
+    }
+    function updateOption(key,value) {
+        options[key] = value;
+        audio.volume(options.volume);
+        if (key === "volume") audio.unlock();
+        text("settings-status",options.save() ? "已保存到本浏览器。" : "本地存储受限。设置在当前页面生效。");
+        refreshOptions();
+    }
+    function openSettings() {
+        settingsBack = screen === "play" ? "play" : "home";
+        change("settings","settings-volume");
+        refreshOptions();
+    }
+    function closeSettings() {
+        if (settingsBack === "play") {
+            change("play","arena");
+            setPanel("pause");
+        } else home();
+    }
+    function home() {
+        run = null;
+        refreshOptions();
+        ledger.sync();
+        change("home","new-game");
+        show("resume-game",runSave.available);
+        show("home-storage",ledger.restricted || ledger.provisional);
+        text("home-storage","本地存储受限。仍可试玩，未写入的矿石只保留在此页面。");
+    }
+    function preview() {
+        run = new Run(feedback);
+        selected = START;
+        miniVersion = -1;
+        change("preview","start-run");
+        drawBoard(byId("preview-board"),false,true);
+    }
+    function resumeSaved() {
+        const restored = runSave.resume(feedback);
+        if (!restored) {
+            show("home-storage",true);
+            text("home-storage","这份存档暂时无法读取。");
+            return;
+        }
+        run = restored;
+        selected = null;
+        miniVersion = -1;
+        effects.emit("room");
+        change("play","arena");
+        hud();
+        paintField();
+    }
+    function start() {
+        run.start();
+        tutorial.begin();
+        selected = null;
+        change("play","arena");
+        hud();
+        paintField();
+    }
+    function result() {
+        ledger.deposit(run.id,run.result.ore);
+        career.record(run.id,run.result);
+        runSave.finish(run.id);
+        change("result","play-again");
+        const r = run.result;
+        text("result-title",r.won ? "此关已开" : "此局封盘");
+        text("result-time",r.danger ? "超时迎战 · 续层记录：" + r.timeoutEffect : "探索余时 " + clockLabel(r.remaining));
+        const stats = [
+            ["点亮房间",r.rooms+"/"+run.board.rooms.size], ["自动／自主探索",r.auto+"／"+r.manual],
+            ["金币 · 探索／商场",r.kills+"／"+r.market], ["建筑／制材",r.builds+"／"+r.materials]
+        ];
+        byId("result-stats").replaceChildren(...stats.map(([label,value]) => {
+            const field = element("div");
+            field.append(element("dt",label),element("dd",value));
+            return field;
+        }));
+        resultSaveText();
+    }
+    function resultSaveText() {
+        const ore = run.result.ore;
+        const saved = !ore || ledger.known.has(run.id);
+        const localOnly = ledger.provisional || ledger.restricted;
+        const balance = (localOnly ? "会话矿石 " : "当前矿石余额 ") + ledger.balance + "。";
+        const status = !ore ? "本局未获得矿石。" + balance :
+            saved ? "本局矿石已入账 +" + ore + "。" + balance :
+                "本局矿石 +" + ore + " 暂存在本页面。" + balance;
+        const warning = localOnly ? " 待写入的矿石在离开或刷新后可能丢失。" : "";
+        text("result-save",status + warning);
+        show("retry-save",ledger.pending.size > 0);
+    }
+    function careerScreen() {
+        change("stats");
+        career.sync();
+        const totals = career.totals;
+        const metrics = [["完局",totals.runs],["胜场",totals.wins],["点亮房间",totals.rooms],
+            ["建成建筑",totals.builds],["带出矿石",totals.ore],["围住探索",totals.enclosed]];
+        byId("career-totals").replaceChildren(...metrics.map(([name,value]) => {
+            const field = element("div");
+            field.append(element("dt",name),element("dd",value));
+            return field;
+        }));
+        byId("achievement-list").replaceChildren(...ACHIEVEMENTS.map(achievement => {
+            const reached = totals[achievement.counter] >= achievement.minimum;
+            return element("li",(reached ? "已达成 · " : "")+achievement.name+" · "+achievement.goal,
+                reached ? "accent" : "muted");
+        }));
+        text("career-status",career.restricted ? "本地存储受限。未写入的统计保留在当前页面。" : "");
+    }
+    function profile() {
+        ledger.sync();
+        change("profile");
+        profileText();
+    }
+    function profileText() {
+        const warning = ledger.restricted || ledger.provisional ? " · 本地存储受限，待写入的矿石仅在本页面保留" : "";
+        text("profile-balance","苍白矿石 " + ledger.balance + warning);
+        show("profile-retry",ledger.pending.size > 0);
+    }
+
+
+    function drawBoard(container,interactive,isPreview=false) {
+        const rooms = run.board.rooms;
+        const nodes = [];
+        const xPos = x => 10+80*x/6;
+        const yPos = y => 76-26*y;
+        for (const room of rooms.values()) {
+            for (const next of [keyOf(room.x+1,room.y),keyOf(room.x,room.y-1)]) {
+                const other = rooms.get(next);
+                if (!other) continue;
+                const edge = element("span",null,"line "+(other.x === room.x ? "v" : "h")+(room.done && other.done ? " on" : ""));
+                edge.style.left = xPos(room.x)+"%";
+                edge.style.top = yPos(room.y)+"%";
+                edge.setAttribute("aria-hidden","true");
+                nodes.push(edge);
+            }
+        }
+        for (const room of rooms.values()) {
+            const marker = isPreview && room.id === START ? "始" : ROOM_SYMBOL[room.type];
+            const node = interactive ? button(marker,() => select(room.id)) : element("span",marker);
+            node.className = ["cell",room.type,room.done && "on",run.inside.has(room.id) && "in",
+                run.current === room.id && "here"].filter(Boolean).join(" ");
+            node.style.left = xPos(room.x)+"%";
+            node.style.top = yPos(room.y)+"%";
+            const description = ROOM_NAME[room.type]+" ("+room.id+")"+(room.done ? " · 已点亮" : "")+
+                (run.inside.has(room.id) ? " · 围住" : "");
+            node.title = description;
+            if (interactive) {
+                node.dataset.cell = room.id;
+                node.setAttribute("aria-label",description);
+                node.setAttribute("aria-pressed",String(selected === room.id));
+            }
+            nodes.push(node);
+        }
+        container.replaceChildren(...nodes);
+    }
+    function select(target) {
+        selected = target;
+        for (const node of dialogBody.querySelectorAll("[data-cell]"))
+            node.setAttribute("aria-pressed",String(node.dataset.cell === target));
+        updatePanel(true);
+    }
+    function hud() {
+        show("tutorial",Boolean(tutorial.remaining));
+        if (tutorial.remaining) text("tutorial-step",
+            "引导 "+seconds(tutorial.remaining)+" 秒 · "+tutorial.next[1]);
+        show("open-event",Boolean(run.pendingVillageEvent));
+        show("open-pack",Boolean(run.itemCount || run.relics.size || Object.keys(run.fighter.effects.active).length));
+        const {arena,fighter,wallet,room} = run;
+        text("hp",fighter.hp+"/"+fighter.maxHp+(fighter.shield ? " · 盾 "+fighter.shield : ""));
+        byId("hp-bar").max = fighter.maxHp;
+        byId("hp-bar").value = fighter.hp;
+        text("mood",fighter.mood+"/100");
+        byId("mood-bar").value = fighter.mood;
+        text("battle",fighter.battle+"/100");
+        byId("battle-bar").value = fighter.battle;
+        text("clock-label",run.phase === "boss" ? run.danger ? "超时战 · 停钟" : "棋帅战 · 停钟" : "探索余时");
+        text("clock",clockLabel(run.remaining));
+        text("skill-cd",arena.skillCd ? seconds(arena.skillCd)+" 秒" : "就绪");
+        text("dash-cd",arena.dashCd ? seconds(arena.dashCd)+" 秒" : "就绪");
+        text("ultimate",fighter.boostMs ? "攻击 +"+fighter.boost+" · "+seconds(fighter.boostMs)+" 秒" :
+            fighter.mood === 100 && fighter.battle === 100 ? "大招就绪" : "双槽满放大");
+        text("gold",wallet.gold);
+        byId("gold").classList.toggle("negative",wallet.gold < 0);
+        text("materials",wallet.materials);
+        text("ore",wallet.ore);
+        text("room-name",ROOM_NAME[room.type]);
+        text("room-state",room.id+" · 已点亮 "+run.board.count+"/"+run.board.rooms.size);
+        show("building-info",!!room.building);
+        if (room.building) text("building-info",BUILDINGS[room.building]+" · "+room.level+" 级");
+        show("open-building",run.canTravel && ["r","village"].includes(room.type));
+        show("open-merchant",run.canTravel && room.type === "merchant");
+        show("order-material",run.canTravel && run.hasBuilding("factory"));
+        byId("order-material").disabled = run.queued || wallet.gold < 8;
+        show("open-skill",run.skills > 0);
+        text("open-skill","技能球 ×"+run.skills+" [V]");
+        text("status",run.notice || (wallet.borrowed ? "贷款生效 · 金币收入 -20%" :
+            run.canTravel ? "亮门可通行。按 Tab 查看路线。" : run.phase === "boss" ? "看清预警，移动或冲刺躲开。" : "击倒本房敌人后，门会打开。"));
+        if (miniVersion !== run.mapVersion) {
+            miniVersion = run.mapVersion;
+            drawBoard(byId("mini-board"),false);
+        }
+    }
+
+    const panelTitles = {map:"关城棋盘",build:"建造与升级",merchant:"行脚商人",skill:"选择技能球",pack:"局内道具",event:"村庄事件",pause:"已暂停"};
+    function setPanel(next,focus=true) {
+        if (next && !run?.active) return;
+        panel = next;
+        overlay.hidden = !next;
+        byId("play").inert = !!next;
+        dialog.classList.toggle("wide",next === "map");
+        clearInput();
+        lastPanelState = "";
+        if (next) {
+            text("dialog-title",panelTitles[next]);
+            text("close-dialog",next === "pause" ? "继续游戏" : "关闭 [Esc]");
+            renderPanel();
+            if (focus) dialog.focus({preventScroll:true});
+        } else if (focus && screen === "play") canvas.focus({preventScroll:true});
+    }
+    function renderPanel() {
+        switch (panel) {
+            case "map": {
+                const layout = element("div",undefined,"map-layout");
+                const left = element("div");
+                const map = element("div",undefined,"board");
+                map.id = "dialog-map";
+                map.setAttribute("aria-label","选房棋盘");
+                left.append(map,element("p","● 点亮　◎ 围住　红边 当前房","muted"));
+                const detail = element("section",undefined,"map-detail");
+                detail.id = "map-detail";
+                layout.append(left,detail);
+                dialogBody.replaceChildren(layout);
+                break;
+            }
+            case "build":
+            case "merchant":
+            case "skill":
+            case "pack":
+                dialogBody.replaceChildren(element("div",undefined,"stack"));
+                break;
+            case "event": {
+                const event = run.pendingVillageEvent;
+                if (!event) return;
+                dialogBody.replaceChildren(element("p",event.rarity,"accent"),element("h3",event.name),
+                    element("p",event.description),button("领取",() => {
+                        if (run.acceptVillageEvent()) setPanel(null);
+                    },true,true));
+                return;
+            }
+            case "pause": {
+                const message = element("p","探索与战斗停钟。");
+                message.setAttribute("role","status");
+                const actions = element("div",undefined,"actions");
+                actions.append(button("继续本局",resumeOrClose,true,true),button("保存并回主菜单",() => {
+                    if (runSave.save(run)) home();
+                    else message.textContent = "当前浏览器无法保存本局，仍可继续游玩。";
+                }),button("设置",openSettings));
+                dialogBody.replaceChildren(message,actions);
+                return;
+            }
+        }
+        updatePanel(true);
+    }
+    function updatePanel(force=false) {
+        if (!panel || panel === "pause") return;
+        if (panel === "map") {
+            const map = byId("dialog-map");
+            if (map.dataset.version !== String(run.mapVersion)) {
+                map.dataset.version = run.mapVersion;
+                drawBoard(map,true);
+            }
+        }
+        // Keep rendered buttons stable while the clock ticks except at an actual availability boundary.
+        if (panel === "event") return;
+        const cost = panel === "map" && selected ? run.board.transport(run.current,selected) : null;
+        const clockCheck = cost === null ? "" : Math.sign(run.remaining-cost);
+        const travelCheck = run.remaining <= 5000;
+        const signature = [panel,selected,run.phase,run.mapVersion,run.wallet.gold,run.wallet.materials,run.wallet.borrowed,
+            run.room.level,run.queued,run.skills,run.upgradedAttack,clockCheck,travelCheck,
+            ...Object.values(run.inventory),...run.relics,...Object.keys(run.fighter.effects.active),
+            run.refreshes,...(run.shopOffers ?? []).map(offer => offer.sold)].join("|");
+        if (!force && signature === lastPanelState) return;
+        lastPanelState = signature;
+        if (panel === "map") {
+            mapDetail(cost);
+            return;
+        }
+        const content = dialogBody.firstElementChild;
+        const materials = run.wallet.materials;
+        const gold = run.wallet.gold;
+        if (panel === "build") {
+            const hasBuilding = run.room.building;
+            const summary = element("p","现有建材 "+materials+"。建造和升级各耗 1 建材。","muted");
+            if (hasBuilding) {
+                const label = run.room.level === 2 ? "已到 2 级" : "升至 2 级 · 缩短四分之一的产出周期";
+                content.replaceChildren(summary,button(label,() => { if (run.upgrade()) setPanel(null); },run.room.level === 1 && materials > 0,true));
+                return;
+            }
+            const options = run.room.type === "village" ? [["village","点亮村庄 · 产出氛围"]] : [
+                ["market","建商场 · 每 20 秒产金币"],["factory","建建材厂 · 远程花金币制材"],
+                ["mine","建苍白矿场 · 整局一处，最多产 6 矿石"]
+            ];
+            content.replaceChildren(summary,...options.map(([kind,label]) =>
+                button(label,() => {
+                    if (run.build(kind)) setPanel(run.pendingVillageEvent ? "event" : null);
+                },run.canBuild(kind))));
+        } else if (panel === "merchant") {
+            const offers = run.offers.map(offer => {
+                const label = run.offerLabel(offer)+" · "+offer.price+" 金币";
+                return button(label+(offer.sold ? " · 已售" : ""),() => run.buyOffer(offer.id),run.canBuyOffer(offer));
+            });
+            content.replaceChildren(element("p","金币 "+gold+" · 建材 "+materials,"muted"),
+                button("买建材 ×1 · 12 金币",() => trade("material"),gold >= 12),
+                button("唐刀攻击 +8 · 20 金币",() => trade("attack"),gold >= 20 && !run.upgradedAttack),
+                ...offers,
+                button("刷新 · "+run.refreshPrice+" 金币",() => run.refreshShop(),gold>=run.refreshPrice),
+                button("高利贷 · 建材 +1，金币变负，收入 -20%",() => trade("loan"),!run.wallet.borrowed));
+        } else if (panel === "pack") {
+            const relics = [...run.relics].map(id => RELICS[id].name+" · "+RELICS[id].description);
+            content.replaceChildren(...Object.entries(CONSUMABLES).map(([id,item]) =>
+                button(item.name+" ×"+run.inventory[id]+" · "+item.description+" ["+item.key+"]",
+                    () => { if (run.useItem(id)) setPanel(null); },run.inventory[id]>0)),
+                ...relics.map(label => element("p",label,"muted")));
+        } else {
+            content.replaceChildren(element("p","余下 "+run.skills+" 次选择，也可先关面板继续战斗。","muted"),
+                button("利刃 · 本局攻击 +2",() => pick(true),true,true),
+                button("强体 · 最大生命 +10 并恢复 10",() => pick(false)));
+        }
+    }
+    function mapDetail(cost) {
+        const body = byId("map-detail");
+        if (!selected) {
+            body.replaceChildren(element("h3","点击房间"),element("p","用鼠标或方向键选房。相邻可过门，已连通可按 T 传送。","muted"));
+            return;
+        }
+        const room = run.board.rooms.get(selected);
+        const adjacent = run.canTravel && run.board.neighbors(run.current).includes(selected);
+        const auto = run.autoPrice(selected);
+        const actions = element("div",undefined,"stack");
+        const warnings = [];
+        if (adjacent) {
+            actions.append(button(run.remaining <= 5000 ? "过门 · 将触发超时" :
+                (auto ? "亲自迎战" : "沿门进入")+" · 5 秒",() => walk(selected),true,true));
+        }
+        if (auto) {
+            actions.append(button("自动探索 · "+auto+" 金币",() => { if (run.auto(selected)) setPanel(null); },run.wallet.gold>=auto));
+            warnings.push("亲自挑战时双方增强，自动探索为常规奖励。");
+        }
+        if (run.canTravel && cost !== null) {
+            actions.append(button("传送 · "+seconds(cost)+" 秒 [T]",() => teleport(selected),cost <= run.remaining));
+            if (cost === run.remaining) warnings.push("传送后立即进入超时棋帅战。");
+            if (cost > run.remaining) warnings.push("剩余时间不足。");
+        }
+        if (!actions.childElementCount) warnings.push(run.current === selected ? "当前位置。"
+            : run.canTravel ? "请先点亮可达的相邻入口。" : "当前只能查看棋盘。");
+        body.replaceChildren(element("h3",ROOM_NAME[room.type]),
+            element("p",room.id+" · "+(room.done ? "已点亮" : run.inside.has(room.id) ? "已围住" : "未探索"),"muted"),
+            actions,...warnings.map(warning => element("p",warning,"muted")));
+    }
+    function pick(attack) {
+        if (run.chooseSkill(attack) && !run.skills) setPanel(null);
+    }
+    function trade(kind) {
+        if (run.trade(kind)) setPanel(null);
+    }
+    function buildMenu() {
+        if (run.pendingVillageEvent) setPanel("event");
+        else if (run.canTravel && ["r","village"].includes(run.room.type)) setPanel("build");
+        else run.hint("只有到达资源房或村庄后才能建造。");
+    }
+    function interact() {
+        if (!run.canTravel) {
+            run.hint("房门关闭。先击倒本房敌人。");
+            return;
+        }
+        for (const id of run.board.neighbors(run.current)) {
+            const [x,y] = cell(id);
+            const edge = door(x-run.room.x,y-run.room.y,0);
+            if (distance(run.arena.player,edge) > 215) continue;
+            if (run.autoPrice(id)) {
+                selected = id;
+                setPanel("map");
+            } else walk(id);
+            return;
+        }
+        if (run.room.type === "merchant") setPanel("merchant");
+        else if (["r","village"].includes(run.room.type)) setPanel("build");
+        else run.hint("靠近亮门按 E，或按 Tab 选相邻房。");
+    }
+    function walk(id) {
+        if (run.walk(id)) setPanel(null);
+    }
+    function teleport(id) {
+        if (run.teleport(id)) setPanel(null);
+        else run.hint("目标未连通，或剩余时间不足。");
+    }
+    function order() {
+        if (!run.orderMaterial()) run.hint("需要空闲建材厂、8 金币和已点亮房间。");
+    }
+
+
+    const TAU = Math.PI*2;
+    const viewColors = {thief:"#cbac90",rebel:"#b37055",heavy:"#8babb0",archer:"#69b99d",cavalry:"#b5a0da",marshal:"#5d696b"};
+    function circle(p,r,fill,border,lineWidth=4) {
+        paint.beginPath();
+        paint.arc(p.x,p.y,r,0,TAU);
+        if (fill) { paint.fillStyle = fill; paint.fill(); }
+        if (border) { paint.strokeStyle = border; paint.lineWidth = lineWidth; paint.stroke(); }
+    }
+    function line(from,to,color,width=2) {
+        paint.beginPath();
+        paint.moveTo(from.x,from.y);
+        paint.lineTo(to.x,to.y);
+        paint.strokeStyle = color;
+        paint.lineWidth = width;
+        paint.stroke();
+    }
+    function label(value,x,y,size=24,color=COLOR.paper,alignment="center",weight=600) {
+        paint.font = weight+" "+size+"px 'Microsoft YaHei UI', 'PingFang SC', system-ui, sans-serif";
+        paint.textAlign = alignment;
+        paint.textBaseline = "middle";
+        paint.fillStyle = color;
+        paint.fillText(value,x,y);
+    }
+    function rectangle(x,y,w,h,fill) {
+        paint.fillStyle = fill;
+        paint.fillRect(x,y,w,h);
+    }
+    function bar(x,y,w,h,value,max,fill) {
+        rectangle(x,y,w,h,COLOR.ink);
+        rectangle(x,y,w*clamp(value/max,0,1),h,fill);
+    }
+    function fan(origin,facing,reach,angle,fill,edge,progress=1) {
+        const theta = directionAngle(facing);
+        const half = angle*Math.PI/360;
+        const full = angle >= 360;
+        paint.beginPath();
+        if (!full) paint.moveTo(origin.x,origin.y);
+        paint.arc(origin.x,origin.y,reach,theta-half,theta+half);
+        paint.closePath();
+        paint.fillStyle = fill;
+        paint.strokeStyle = edge;
+        paint.lineWidth = 5;
+        paint.fill();
+        paint.stroke();
+        if (progress < 1) {
+            paint.beginPath();
+            paint.arc(origin.x,origin.y,reach*(.35+.63*progress),theta-half,theta+half);
+            paint.strokeStyle = edge;
+            paint.lineWidth = 3;
+            paint.setLineDash([13,10]);
+            paint.stroke();
+            paint.setLineDash([]);
+        }
+    }
+    function lane(start,facing,reach,halfWidth,progress) {
+        const offset = scale(vector(-facing.y,facing.x),halfWidth);
+        const end = add(start,scale(facing,reach));
+        const points = [add(start,offset),add(end,offset),sub(end,offset),sub(start,offset)];
+        paint.beginPath();
+        paint.moveTo(points[0].x,points[0].y);
+        for (const p of points.slice(1)) paint.lineTo(p.x,p.y);
+        paint.closePath();
+        paint.fillStyle = "rgba(244,178,74,"+(.12+progress*.17)+")";
+        paint.fill();
+        paint.strokeStyle = COLOR.hazard;
+        paint.lineWidth = 5;
+        paint.setLineDash([18,11]);
+        paint.stroke();
+        paint.setLineDash([]);
+        if (reach > 90) {
+            const tip = add(start,scale(facing,Math.min(220,reach-20)));
+            const tail = sub(tip,scale(facing,36));
+            line(add(tail,scale(unit(offset),22)),tip,COLOR.hazard,5);
+            line(sub(tail,scale(unit(offset),22)),tip,COLOR.hazard,5);
+        }
+    }
+    function warning(enemy) {
+        const attack = enemy.attack;
+        if (!attack) return;
+        const {spec,facing,elapsed,kind,shots} = attack;
+        const start = enemy.position;
+        const fraction = clamp(elapsed/spec.windup,0,1);
+        if (spec.shape === "ring") {
+            circle(start,spec.reach,null,COLOR.hazard,6);
+            circle(start,spec.reach+(1-fraction)*75,null,"#f4b24a92",4);
+            for (let i=0; i<shots; i++) {
+                const ray = pointAt(directionAngle(facing)+i*TAU/shots);
+                const p = add(start,scale(ray,spec.reach));
+                const inner = add(start,scale(ray,spec.reach-62));
+                line(inner,p,COLOR.hazard,5);
+                circle(p,8,COLOR.bullet,COLOR.ink,3);
+            }
+        } else if (spec.shape === "lane") {
+            const charge = kind === "charge";
+            const rest = clamp(spec.windup+720-elapsed,0,720);
+            lane(start,facing,charge ? ceil(percent(enemy.speed,150)*rest,1000) : spec.reach,charge ? 100 : 15,fraction);
+        } else {
+            const reach = spec.reach+(enemy.kind === "marshal" ? enemy.spec.radius : 0);
+            fan(start,facing,reach,spec.angle,"rgba(244,178,74,"+(.13+.19*fraction)+")",COLOR.hazard,fraction);
+        }
+    }
+    function drawEnemy(enemy) {
+        const p = enemy.position;
+        const r = enemy.spec.radius;
+        const tint = enemy.kind === "marshal" && enemy.rage ? "#af5146" : viewColors[enemy.kind];
+        const shadow = add(p,vector(7,11));
+        circle(shadow,r+6,"#132022bc");
+        if (enemy.kind === "heavy" || enemy.kind === "thief" || enemy.kind === "archer") {
+            paint.save();
+            paint.translate(p.x,p.y);
+            if (enemy.kind === "heavy") {
+                rectangle(-r,-r,r*2,r*2,tint);
+                paint.strokeStyle = COLOR.paper;
+                paint.lineWidth = 4;
+                paint.strokeRect(-r,-r,r*2,r*2);
+            } else {
+                paint.beginPath();
+                paint.moveTo(0,-r);
+                paint.lineTo(r,r);
+                paint.lineTo(-r,r);
+                paint.closePath();
+                paint.fillStyle = tint;
+                paint.fill();
+                if (enemy.kind === "archer") circle(vector(0,0),r+4,null,COLOR.paper,4);
+            }
+            paint.restore();
+        } else {
+            circle(p,r,tint,enemy.rage ? COLOR.hazard : COLOR.paper,5);
+            if (enemy.kind === "marshal") {
+                circle(p,r-19,null,"#d2bf8a",6);
+                circle(p,r-35,null,COLOR.ink,12);
+                paint.strokeStyle = "#d2bf8a";
+                paint.lineWidth = 7;
+                paint.strokeRect(p.x-86,p.y-86,172,172);
+                label("帅",p.x,p.y,122);
+            }
+            if (enemy.kind === "cavalry")
+                line(add(p,vector(-r,r/2)),add(p,vector(r+27,-r/2)),COLOR.paper,8);
+        }
+        if (enemy.kind !== "marshal") {
+            label(enemy.spec.name,p.x,p.y-r-20,24);
+            bar(p.x-r,p.y+r+9,r*2,7,enemy.hp,enemy.maxHp,COLOR.paper);
+        }
+        if (enemy.attack) {
+            const {spec,kind,fired,shots} = enemy.attack;
+            const caption = kind === "volley" && fired ? spec.name+" "+fired+"/"+shots : spec.name;
+            const y = enemy.kind === "marshal" ? p.y+132 : p.y+r+37;
+            rectangle(p.x-91,y-14,182,29,"#151b1de8");
+            label(caption,p.x,y,21,COLOR.hazard);
+        }
+    }
+    function roomDecor(style) {
+        paint.save();
+        paint.globalAlpha = .28;
+        for (const [x,y] of [[186,185],[WORLD.w-186,185],[186,WORLD.h-185],[WORLD.w-186,WORLD.h-185]]) {
+            const point = vector(x,y);
+            switch (style.motif) {
+                case "mineral":
+                    for (const [dx,dy,radius] of [[-38,20,13],[3,-9,20],[35,26,10]])
+                        circle(add(point,vector(dx,dy)),radius,style.accent);
+                    break;
+                case "lantern":
+                    rectangle(x-16,y-31,32,62,style.accent);
+                    line(vector(x,y+29),vector(x,y+61),style.accent,5);
+                    break;
+                case "stall":
+                    rectangle(x-53,y-14,106,28,style.accent);
+                    for (const dx of [-42,-14,14,42]) line(vector(x+dx,y-17),vector(x+dx,y+24),COLOR.paper,5);
+                    break;
+                case "banner":
+                    line(vector(x,y-47),vector(x,y+52),style.accent,5);
+                    rectangle(x,y-45,49,54,style.accent);
+                    break;
+                case "seal":
+                    circle(point,46,null,style.accent,7);
+                    circle(point,16,style.accent);
+                    break;
+                default: circle(point,11,null,style.accent,4); break;
+            }
+        }
+        if (style.motif === "seal") circle(vector(WORLD.w/2,WORLD.h/2),360,null,style.accent,8);
+        paint.restore();
+    }
+    function tileFloor() {
+        const style = ROOM_STYLE[run.room.type];
+        rectangle(0,0,WORLD.w,WORLD.h,style.floor);
+        paint.beginPath();
+        for (let x=100; x<WORLD.w; x+=100) { paint.moveTo(x,0); paint.lineTo(x,WORLD.h); }
+        for (let y=100; y<WORLD.h; y+=100) { paint.moveTo(0,y); paint.lineTo(WORLD.w,y); }
+        paint.lineWidth = 2;
+        paint.strokeStyle = style.grid;
+        paint.stroke();
+        roomDecor(style);
+        paint.strokeStyle = style.accent;
+        paint.lineWidth = 9;
+        paint.strokeRect(18,18,WORLD.w-36,WORLD.h-36);
+        const room = run.room;
+        for (const target of run.board.neighbors(room.id)) {
+            const [x,y] = cell(target);
+            const dx = x-room.x;
+            const dy = y-room.y;
+            const p = door(dx,dy,18);
+            const glow = run.canTravel ? COLOR.hazard : COLOR.wall;
+            if (dx) line(add(p,vector(0,-80)),add(p,vector(0,80)),glow,16);
+            else line(add(p,vector(-80,0)),add(p,vector(80,0)),glow,16);
+            const t = door(dx,dy,87);
+            label(run.canTravel ? "E" : "×",t.x,t.y,33,glow);
+        }
+        if (room.building || (!run.arena.enemies.length && ["merchant","r","village"].includes(room.type))) {
+            const left = WORLD.w/2-140;
+            rectangle(left,105,280,63,"#1a2325e6");
+            label(room.building ? BUILDINGS[room.building] + " · " + room.level + " 级" :
+                room.type === "merchant" ? "E 交易" : "B 建造",WORLD.w/2,137,29,COLOR.friendly);
+        }
+    }
+    function fieldRect() {
+        const outer = canvas.getBoundingClientRect();
+        return {left:outer.left+canvas.clientLeft,top:outer.top+canvas.clientTop,width:canvas.clientWidth,height:canvas.clientHeight};
+    }
+    function updateAim() {
+        if (!mousePosition || !fit) return;
+        const target = worldPoint(fit,mousePosition.x,mousePosition.y);
+        aim = add(aim,scale(sub(target,aim),options.sensitivity/100));
+    }
+    function drawEffects(trails) {
+        for (const particle of effects.particles) {
+            if (!particle.life || (particle.kind === "trail") !== trails) continue;
+            const p = particle.point;
+            const portion = particle.life/particle.maxLife;
+            paint.globalAlpha = trails ? portion*.37 : portion;
+            if (particle.kind === "number") {
+                label(String(particle.value),p.x,p.y,32,particle.tint);
+            } else {
+                circle(p,trails ? WORLD.player : 4+portion*10,particle.tint);
+            }
+        }
+        paint.globalAlpha = 1;
+    }
+    function paintField() {
+        const arena = run.arena;
+        fit = fieldRect();
+        if (fit.width <= 0 || fit.height <= 0) return;
+        const dpi = clamp(window.devicePixelRatio || 1,1,2.5);
+        const w = Math.round(fit.width*dpi);
+        const h = Math.round(fit.height*dpi);
+        if (canvas.width !== w || canvas.height !== h) {
+            canvas.width = w;
+            canvas.height = h;
+        }
+        paint.setTransform(w/WORLD.w,0,0,h/WORLD.h,0,0);
+        updateAim();
+        paint.save();
+        if (effects.shake && !reduceMotion?.matches) {
+            rectangle(0,0,WORLD.w,WORLD.h,ROOM_STYLE[run.room.type].floor);
+            const extent = 16*effects.shake/150;
+            paint.translate(Math.sin(effects.age/11)*extent,Math.cos(effects.age/16)*extent*.65);
+        }
+        tileFloor();
+        drawEffects(true);
+        for (let i=0; i<arena.pots.length; i++) {
+            if (arena.potMask & (1 << i)) continue;
+            const pot = arena.pots[i];
+            circle(pot,19,"#a8744f",COLOR.ink,4);
+            line(add(pot,vector(-16,-16)),add(pot,vector(16,-16)),COLOR.paper,5);
+        }
+        for (const item of run.room.loot) {
+            const p = item.position;
+            const tint = {gold:COLOR.hazard,heal:COLOR.heal,skill:COLOR.atmosphere,guard:COLOR.ore}[item.kind] ?? COLOR.friendly;
+            circle(p,21,COLOR.ink,tint,6);
+            label({gold:"钱",heal:"+",skill:"◇",guard:"护",purge:"符",tonic:"药",fury:"丸"}[item.kind],p.x,p.y,26,tint);
+        }
+        arena.enemies.forEach(warning);
+        if (arena.strike) {
+            const s = arena.strike;
+            fan(s.origin,s.facing,s.reach,s.angle,"#fff1c974",COLOR.bullet);
+        }
+        arena.enemies.forEach(drawEnemy);
+        for (const projectile of arena.bullets) {
+            const p = projectile.position;
+            if (projectile.arrow) {
+                const tail = sub(p,scale(unit(projectile.velocity),52));
+                line(tail,p,COLOR.ink,17);
+                line(tail,p,COLOR.hazard,9);
+            } else {
+                const tint = {spiral:COLOR.atmosphere,homing:COLOR.friendly,scatter:COLOR.bullet,wall:COLOR.player}[projectile.pattern] ?? COLOR.hazard;
+                circle(p,projectile.pattern === "wall" ? 19 : 16,tint,COLOR.ink,6);
+                circle(p,7,COLOR.bullet);
+            }
+        }
+        const p = arena.player;
+        circle(add(p,vector(9,9)),WORLD.player+9,"#111718d9");
+        circle(p,WORLD.player,arena.hurt ? COLOR.paper : COLOR.player,COLOR.paper,5);
+        circle(add(p,vector(-9,-10)),7,"#fff6e66e");
+        line(p,add(p,scale(arena.facing,83)),COLOR.paper,8);
+        if (arena.invincible) circle(p,47,null,COLOR.paper,4);
+        if (run.fighter.shield) circle(p,57,null,COLOR.friendly,5);
+        if (arena.stunned) label("眩晕",p.x,p.y-74,29,COLOR.hazard);
+        drawEffects(false);
+        paint.restore();
+        const boss = arena.enemies.find(enemy => enemy.kind === "marshal");
+        if (boss) {
+            rectangle(413,27,1074,102,"#141d1fea");
+            label(boss.rage ? "镇关棋帅 · 狂暴" : "镇关棋帅",435,60,32,boss.rage ? COLOR.hazard : COLOR.paper,"left");
+            label(boss.hp+"/"+boss.maxHp,1465,60,27,COLOR.paper,"right");
+            bar(435,93,1030,15,boss.hp,boss.maxHp,COLOR.player);
+        }
+        if (run.notice && !panel) {
+            rectangle(295,WORLD.h-75,1310,54,"#141d1fec");
+            label(run.notice,WORLD.w/2,WORLD.h-48,29,COLOR.paper);
+        }
+    }
+
+
+    function toggleMap() {
+        if (panel === "map") setPanel(null);
+        else if (!panel) setPanel("map");
+    }
+    function pauseOnFocusLoss() {
+        clearInput();
+        clock.reset();
+        if (screen === "play" && run.active && panel !== "pause") setPanel("pause",false);
+    }
+    function resumeOrClose() {
+        if (panel === "pause") clock.reset();
+        setPanel(null);
+    }
+    function eventPoint(event) {
+        mousePosition = vector(event.clientX,event.clientY);
+        fit = fieldRect();
+        updateAim();
+    }
+    canvas.addEventListener("pointermove",eventPoint);
+    canvas.addEventListener("pointerdown",event => {
+        if (screen !== "play" || panel || event.pointerType === "touch") return;
+        event.preventDefault();
+        canvas.focus({preventScroll:true});
+        eventPoint(event);
+        if (event.button === 0) {
+            pointerId = event.pointerId;
+            canvas.setPointerCapture(pointerId);
+            heldStrike = strike = true;
+        } else if (event.button === 2) skill = true;
+    });
+    const releasePointer = event => {
+        if (pointerId !== event.pointerId || (event.type === "pointerup" && event.button !== 0)) return;
+        heldStrike = false;
+        pointerId = null;
+        if (event.type !== "pointerup") strike = false;
+    };
+    window.addEventListener("pointerup",releasePointer);
+    canvas.addEventListener("pointercancel",releasePointer);
+    canvas.addEventListener("lostpointercapture",releasePointer);
+    canvas.addEventListener("contextmenu",event => event.preventDefault());
+
+    const moveKeys = new Set(["KeyW","KeyA","KeyS","KeyD"]);
+    const mapKeys = {ArrowRight:[1,0],ArrowUp:[0,1],ArrowLeft:[-1,0],ArrowDown:[0,-1]};
+    window.addEventListener("keydown",event => {
+        if (event.altKey || event.ctrlKey || event.metaKey || event.isComposing) return;
+        const code = event.code;
+        if (screen === "settings" && code === "Escape") { event.preventDefault(); closeSettings(); return; }
+        if (screen === "preview" && (code === "Enter" && event.target.id !== "start-run" && event.target.tagName !== "BUTTON" || code === "Escape")) {
+            event.preventDefault();
+            if (code === "Enter") start();
+            else home();
+            return;
+        }
+        if (screen !== "play") return;
+        if (code === "Escape") {
+            event.preventDefault();
+            if (!event.repeat) {
+                if (panel) resumeOrClose();
+                else setPanel("pause");
+            }
+            return;
+        }
+        if (code === "Tab" && !event.shiftKey && (!panel || panel === "map")) {
+            event.preventDefault();
+            if (!event.repeat) toggleMap();
+            return;
+        }
+        if (panel === "map" && code === "KeyT") {
+            event.preventDefault();
+            if (selected && !event.repeat) teleport(selected);
+            return;
+        }
+        if (panel === "map" && mapKeys[code]) {
+            event.preventDefault();
+            const [x,y] = cell(selected || run.current);
+            const [dx,dy] = mapKeys[code];
+            const next = keyOf(x+dx,y+dy);
+            if (run.board.rooms.has(next)) select(next);
+            return;
+        }
+        if (panel) return;
+        if (moveKeys.has(code)) {
+            event.preventDefault();
+            keys.add(code);
+            return;
+        }
+        if (!["Space","KeyQ","KeyB","KeyE","KeyF","KeyV","KeyC","Digit1","Digit2","Digit3"].includes(code)) return;
+        // Space on an actual control retains its normal native button activation.
+        if (code === "Space" && event.target.tagName === "BUTTON") return;
+        event.preventDefault();
+        if (event.repeat) return;
+        switch (code) {
+            case "Space": dash = true; break;
+            case "KeyQ": run.ultimate(); break;
+            case "KeyB": buildMenu(); break;
+            case "KeyE": interact(); break;
+            case "KeyF": order(); break;
+            case "KeyV": if (run.skills) setPanel("skill"); break;
+            case "KeyC": setPanel("pack"); break;
+            case "Digit1": run.useItem("purge"); break;
+            case "Digit2": run.useItem("tonic"); break;
+            case "Digit3": run.useItem("fury"); break;
+        }
+    });
+    window.addEventListener("pointerdown",() => audio.unlock());
+    window.addEventListener("keydown",() => audio.unlock());
+    for (const id of ["volume","settings-volume"]) byId(id).addEventListener("input",event =>
+        updateOption("volume",Number(event.target.value)));
+    byId("settings-aim").addEventListener("input",event => updateOption("sensitivity",Number(event.target.value)));
+    byId("settings-hints").addEventListener("change",event => updateOption("hints",event.target.checked));
+    window.addEventListener("keyup",event => keys.delete(event.code));
+    window.addEventListener("blur",pauseOnFocusLoss);
+    document.addEventListener("visibilitychange",() => {
+        if (document.hidden) pauseOnFocusLoss();
+        else clock.reset();
+    });
+    window.addEventListener("storage",event => {
+        if (screen === "stats" && (!event.key || event.key.startsWith(STATS_PREFIX))) careerScreen();
+        if (event.key && !event.key.startsWith(SAVE_PREFIX)) return;
+        ledger.sync();
+        if (screen === "profile") profileText();
+        else if (screen === "result") resultSaveText();
+    });
+
+    const bind = (id,callback) => byId(id).addEventListener("click",callback);
+    bind("new-game",preview);
+    bind("resume-game",resumeSaved);
+    bind("open-settings",openSettings);
+    bind("open-stats",careerScreen);
+    bind("close-settings",closeSettings);
+    bind("play-again",preview);
+    bind("start-run",start);
+    bind("open-profile",profile);
+    bind("open-map",toggleMap);
+    bind("skip-tutorial",() => tutorial.finish());
+    bind("open-building",buildMenu);
+    bind("open-merchant",() => setPanel("merchant"));
+    bind("open-skill",() => setPanel("skill"));
+    bind("open-event",() => { if (run.pendingVillageEvent) setPanel("event"); });
+    bind("open-pack",() => setPanel("pack"));
+    bind("order-material",order);
+    bind("pause",() => setPanel("pause"));
+    bind("close-dialog",resumeOrClose);
+    bind("retry-save",() => { ledger.sync(); resultSaveText(); });
+    bind("profile-retry",() => { ledger.sync(); profileText(); });
+    for (const back of document.querySelectorAll("[data-home]")) back.addEventListener("click",home);
+
+    const axis = (positive,negative) => Number(keys.has(positive))-Number(keys.has(negative));
+    function tick(ms) {
+        const before = run.phase;
+        const input = {move:panel ? vector(0,0) : vector(axis("KeyD","KeyA"),axis("KeyS","KeyW")),aim,
+            strike:!panel && (heldStrike || strike),skill:!panel && skill,dash:!panel && dash};
+        strike = skill = dash = false;
+        run.tick(ms,input);
+        if (length(input.move)) tutorial.mark("move");
+        tutorial.tick(ms);
+        effects.update(ms,run.arena);
+        if (before === run.phase) return true;
+        if (run.phase === "result") result();
+        else setPanel(null);
+        return false;
+    }
+    function frame(now) {
+        clock.advance(now,screen === "play" && !document.hidden && panel !== "pause",tick);
+        if (screen === "play") {
+            hud();
+            updatePanel();
+            paintField();
+        }
+        window.requestAnimationFrame(frame);
+    }
+    home();
+    window.requestAnimationFrame(frame);
+}
+</script>
+</body>
+</html>

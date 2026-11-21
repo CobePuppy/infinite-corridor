@@ -1,0 +1,16 @@
+/trash/*
+!/trash/.gitkeep
+.env
+.env.*
+!.env.example
+Thumbs.db
+.DS_Store
+
+# C# Demo 构建输出（包括默认发布目录）
+/src/**/[Bb]in/
+/src/**/[Oo]bj/
+
+# Visual Studio 本机缓存和个人设置
+.vs/
+*.suo
+*.csproj.user
